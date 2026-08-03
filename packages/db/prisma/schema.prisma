@@ -1,0 +1,82 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+    provider = "prisma-client"
+    output   = "../generated/prisma"
+}
+
+datasource db {
+    provider = "postgresql"
+}
+
+enum Role {
+    admin
+    employee
+    contributor
+}
+
+model user {
+    id            String          @id @default(uuid())
+    email         String
+    password      String
+    memberships   membership[]
+    issueMappings issue_mapping[]
+}
+
+model orgs {
+    id          String       @id @default(uuid())
+    name        String
+    description String
+    members     membership[]
+    boards      boards[]
+}
+
+model membership {
+    id   String @id @default(uuid())
+    role Role
+
+    userId String
+    user   user   @relation(fields: [userId], references: [id])
+    orgId  String
+    org    orgs   @relation(fields: [orgId], references: [id])
+}
+
+model boards {
+    id    String @id @default(uuid())
+    title String
+
+    orgId   String
+    org     orgs       @relation(fields: [orgId], references: [id])
+    issues  issues[]
+    section sections[]
+}
+
+model sections {
+    id      String   @id @default(uuid())
+    title   String
+    boardId String
+    board   boards   @relation(fields: [boardId], references: [id])
+    issues  issues[]
+}
+
+model issues {
+    id            String          @id @default(uuid())
+    title         String
+    gh_url        String?
+    boardId       String
+    board         boards          @relation(fields: [boardId], references: [id])
+    sectionId     String
+    section       sections        @relation(fields: [sectionId], references: [id])
+    issueMappings issue_mapping[]
+}
+
+model issue_mapping {
+    id      String @id @default(uuid())
+    userId  String
+    user    user   @relation(fields: [userId], references: [id])
+    issueId String
+    issue   issues @relation(fields: [issueId], references: [id])
+}
