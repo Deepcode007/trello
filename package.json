@@ -8,9 +8,6 @@
     "format": "prettier --write \"**/*.{ts,tsx,md}\"",
     "check-types": "turbo run check-types"
   },
-    "exports": {
-        "./client": "db"
-    },
   "devDependencies": {
     "prettier": "^3.7.4",
     "turbo": "^2.10.8",
