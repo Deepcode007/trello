@@ -11,7 +11,9 @@ if (!result.success)
     console.log("Env Problem");
     process.exit(1);
 }
+export const env = result.data;
+const port = env.port;
 
-const port = result.data.port;
+await import("./src/routes/routes.ts");
 
 app.listen(port, () => { console.log(port, " listening"); });

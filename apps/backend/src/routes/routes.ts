@@ -1,7 +1,12 @@
 import { app } from "../..";
+import { loginHandler } from "../controllers/loginHandler";
+import { signupHandler } from "../controllers/signupHandler";
+import { auth } from "../middlewares/auth";
 
-app.post("/api/auth/signup");
-app.post("/api/auth/login");
+app.post("/api/auth/signup", signupHandler);
+app.post("/api/auth/login", loginHandler);
+
+app.use(auth);
 
 app.get("/api/users/me");
 
