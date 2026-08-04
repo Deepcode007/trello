@@ -2,7 +2,7 @@ import type { Request, Response } from "express";
 import { prisma } from "db/prisma";
 
 
-export async function getCurrentOrg(req: Request, res: Response)
+export async function getCurrentOrgs(req: Request, res: Response)
 {
     let orgs = await prisma.membership.findMany({
         where: {

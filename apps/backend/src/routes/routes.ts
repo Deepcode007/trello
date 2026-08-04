@@ -1,6 +1,8 @@
 import { app } from "../..";
 import { loginHandler } from "../controllers/loginHandler";
-import { getCurrentOrg } from "../controllers/organisation/getCurrent";
+import { CreateOrgHandler } from "../controllers/organisation/Create";
+import { getCurrentOrgs } from "../controllers/organisation/getCurrent";
+import { getOrgDetails } from "../controllers/organisation/getDetails";
 import { profileHandler } from "../controllers/profileHandler";
 import { signupHandler } from "../controllers/signupHandler";
 import { asyncHandler } from "../helpers/asyncHandler";
@@ -17,13 +19,13 @@ app.get("/api/users/me", asyncHandler(profileHandler));
 
 
 // List all organizations the current user is a member of.
-app.get("/api/orgs", asyncHandler(getCurrentOrg));
+app.get("/api/orgs", asyncHandler(getCurrentOrgs));
 
 // Create a new organization (name, description).
-app.post("/api/orgs");
+app.post("/api/orgs", asyncHandler(CreateOrgHandler));
 
 // Get details of a specific organization.
-app.post("/api/orgs/:orgId")
+app.post("/api/orgs/:orgId", asyncHandler(getOrgDetails));
 
 // Update an organization's details.
 
