@@ -43,9 +43,9 @@ model membership {
     accepted Boolean @default(false)
 
     userId   String
-    user     user    @relation(fields: [userId], references: [id])
+    user     user    @relation(fields: [userId], references: [id], onDelete: Cascade)
     orgId    String
-    org      orgs    @relation(fields: [orgId], references: [id])
+    org      orgs    @relation(fields: [orgId], references: [id], onDelete: Cascade)
 }
 
 model boards {
@@ -53,7 +53,7 @@ model boards {
     title String
 
     orgId   String
-    org     orgs       @relation(fields: [orgId], references: [id])
+    org     orgs       @relation(fields: [orgId], references: [id], onDelete: Cascade)
     issues  issues[]
     section sections[]
 }
@@ -62,7 +62,7 @@ model sections {
     id      String   @id @default(uuid())
     title   String
     boardId String
-    board   boards   @relation(fields: [boardId], references: [id])
+    board   boards   @relation(fields: [boardId], references: [id], onDelete: Cascade)
     issues  issues[]
 }
 
@@ -71,16 +71,16 @@ model issues {
     title         String
     gh_url        String?
     boardId       String
-    board         boards          @relation(fields: [boardId], references: [id])
+    board         boards          @relation(fields: [boardId], references: [id], onDelete: Cascade)
     sectionId     String
-    section       sections        @relation(fields: [sectionId], references: [id])
+    section       sections        @relation(fields: [sectionId], references: [id], onDelete: Cascade)
     issueMappings issue_mapping[]
 }
 
 model issue_mapping {
     id      String @id @default(uuid())
     userId  String
-    user    user   @relation(fields: [userId], references: [id])
+    user    user   @relation(fields: [userId], references: [id], onDelete: Cascade)
     issueId String
-    issue   issues @relation(fields: [issueId], references: [id])
+    issue   issues @relation(fields: [issueId], references: [id], onDelete: Cascade)
 }
