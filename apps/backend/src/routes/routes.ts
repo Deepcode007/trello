@@ -1,5 +1,6 @@
 import { app } from "../..";
 import { loginHandler } from "../controllers/loginHandler";
+import { OrgMembersHandler } from "../controllers/organisation/allMembers";
 import { CreateOrgHandler } from "../controllers/organisation/Create";
 import { DeleteOrgHandler } from "../controllers/organisation/deteleOrg";
 import { getCurrentOrgs } from "../controllers/organisation/getCurrent";
@@ -37,7 +38,7 @@ app.put("/api/orgs/:orgId", asyncHandler(UpdateOrgHandler));
 app.delete("/api/orgs/:orgId", asyncHandler(DeleteOrgHandler));
 
 // List all users and their roles in the organization.
-app.get("/api/orgs/:orgId/members");
+app.get("/api/orgs/:orgId/members", asyncHandler(OrgMembersHandler));
 
 // Add a user to an organization (requires userId and role).
 app.post("/api/orgs/:orgId/members");
