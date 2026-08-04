@@ -30,6 +30,8 @@ model orgs {
     id          String       @id @default(uuid())
     name        String
     description String
+    visible     Boolean      @default(true)
+    
     members     membership[]
     boards      boards[]
 }
@@ -37,11 +39,12 @@ model orgs {
 model membership {
     id   String @id @default(uuid())
     role Role
+    accepted Boolean @default(false)
 
-    userId String
-    user   user   @relation(fields: [userId], references: [id])
-    orgId  String
-    org    orgs   @relation(fields: [orgId], references: [id])
+    userId   String
+    user     user    @relation(fields: [userId], references: [id])
+    orgId    String
+    org      orgs    @relation(fields: [orgId], references: [id])
 }
 
 model boards {
