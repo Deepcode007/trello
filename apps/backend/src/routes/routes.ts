@@ -1,5 +1,6 @@
 import { app } from "../..";
 import { loginHandler } from "../controllers/loginHandler";
+import { profileHandler } from "../controllers/profileHandler";
 import { signupHandler } from "../controllers/signupHandler";
 import { auth } from "../middlewares/auth";
 
@@ -8,7 +9,7 @@ app.post("/api/auth/login", loginHandler);
 
 app.use(auth);
 
-app.get("/api/users/me");
+app.get("/api/users/me", profileHandler);
 
 // Organizations & Memberships
 

@@ -21,6 +21,7 @@ enum Role {
 model user {
     id            String          @id @default(uuid())
     email         String          @unique
+    username      String
     password      String
     memberships   membership[]
     issueMappings issue_mapping[]
