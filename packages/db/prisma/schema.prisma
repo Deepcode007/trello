@@ -46,6 +46,7 @@ model membership {
     user     user    @relation(fields: [userId], references: [id], onDelete: Cascade)
     orgId    String
     org      orgs    @relation(fields: [orgId], references: [id], onDelete: Cascade)
+    @@unique([userId, orgId])
 }
 
 model boards {

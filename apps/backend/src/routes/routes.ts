@@ -1,6 +1,7 @@
 import { app } from "../..";
 import { loginHandler } from "../controllers/loginHandler";
 import { CreateOrgHandler } from "../controllers/organisation/Create";
+import { DeleteOrgHandler } from "../controllers/organisation/deteleOrg";
 import { getCurrentOrgs } from "../controllers/organisation/getCurrent";
 import { getOrgDetails } from "../controllers/organisation/getDetails";
 import { UpdateOrgHandler } from "../controllers/organisation/updateDetails";
@@ -33,7 +34,7 @@ app.post("/api/orgs/:orgId", asyncHandler(getOrgDetails));
 app.put("/api/orgs/:orgId", asyncHandler(UpdateOrgHandler));
 
 // Delete an organization.
-app.delete("/api/orgs/:orgId");
+app.delete("/api/orgs/:orgId", asyncHandler(DeleteOrgHandler));
 
 // List all users and their roles in the organization.
 app.get("/api/orgs/:orgId/members");
