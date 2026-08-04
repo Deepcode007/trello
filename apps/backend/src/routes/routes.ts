@@ -3,6 +3,7 @@ import { loginHandler } from "../controllers/loginHandler";
 import { CreateOrgHandler } from "../controllers/organisation/Create";
 import { getCurrentOrgs } from "../controllers/organisation/getCurrent";
 import { getOrgDetails } from "../controllers/organisation/getDetails";
+import { UpdateOrgHandler } from "../controllers/organisation/updateDetails";
 import { profileHandler } from "../controllers/profileHandler";
 import { signupHandler } from "../controllers/signupHandler";
 import { asyncHandler } from "../helpers/asyncHandler";
@@ -29,7 +30,7 @@ app.post("/api/orgs/:orgId", asyncHandler(getOrgDetails));
 
 // Update an organization's details.
 
-app.put("/api/orgs/:orgId");
+app.put("/api/orgs/:orgId", asyncHandler(UpdateOrgHandler));
 
 // Delete an organization.
 app.delete("/api/orgs/:orgId");

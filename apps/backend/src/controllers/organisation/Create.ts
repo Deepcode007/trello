@@ -1,5 +1,4 @@
 import type { Request, Response } from "express";
-import bcrypt from "bcrypt";
 import { prisma } from "db/prisma";
 import { CreateOrgSchema } from "../../models/create_org";
 import { Duplicate, ValidationError } from "../../helpers/errorClass";

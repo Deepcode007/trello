@@ -14,7 +14,7 @@ export async function getOrgDetails(req: Request, res: Response)
         throw new ValidationError();
     }
 
-    let org = await prisma.orgs.findFirst({
+    const org = await prisma.orgs.findFirst({
         where: {
             id: result.data.orgId,
             OR: [
