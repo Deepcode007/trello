@@ -1,21 +1,23 @@
 import { app } from "../..";
 import { loginHandler } from "../controllers/loginHandler";
+import { getCurrentOrg } from "../controllers/organisation/getCurrent";
 import { profileHandler } from "../controllers/profileHandler";
 import { signupHandler } from "../controllers/signupHandler";
+import { asyncHandler } from "../helpers/asyncHandler";
 import { auth } from "../middlewares/auth";
 
-app.post("/api/auth/signup", signupHandler);
-app.post("/api/auth/login", loginHandler);
+app.post("/api/auth/signup", asyncHandler(signupHandler));
+app.post("/api/auth/login", asyncHandler(loginHandler));
 
 app.use(auth);
 
-app.get("/api/users/me", profileHandler);
+app.get("/api/users/me", asyncHandler(profileHandler));
 
 // Organizations & Memberships
 
 
 // List all organizations the current user is a member of.
-app.get("/api/orgs");
+app.get("/api/orgs", asyncHandler(getCurrentOrg));
 
 // Create a new organization (name, description).
 app.post("/api/orgs");
