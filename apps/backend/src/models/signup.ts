@@ -9,5 +9,5 @@ export const SignupSchema = zod.object({
         .regex(/[a-z]/, "Requires one lowercase letter")
         .regex(/[0-9]/, "Requires one number")
         .regex(/[\W_]/, "Requires one special character"),
-    name: zod.string()
+    username: zod.string().min(1)
 })
