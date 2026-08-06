@@ -6,6 +6,7 @@ import { CreateOrgHandler } from "../controllers/organisation/Create";
 import { DeleteOrgHandler } from "../controllers/organisation/deteleOrg";
 import { getCurrentOrgs } from "../controllers/organisation/getCurrent";
 import { getOrgDetails } from "../controllers/organisation/getDetails";
+import { deleteUserHandler } from "../controllers/organisation/removeUser";
 import { UpdateOrgHandler } from "../controllers/organisation/updateDetails";
 import { updateRoleHandler } from "../controllers/organisation/updateRole";
 import { profileHandler } from "../controllers/profileHandler";
@@ -48,8 +49,8 @@ app.post("/api/orgs/:orgId/members", asyncHandler(inviteUserHandler));
 // Update a user's role (e.g., promote to admin). email, role in body
 app.put("/api/orgs/:orgId/members/", asyncHandler(updateRoleHandler));
 
-// Remove a user from an organization.
-app.delete("/api/orgs/:orgId/members/:userId");
+// Remove a user from an organization. (incl admin leave/remove). email in body
+app.delete("/api/orgs/:orgId/members/", asyncHandler(deleteUserHandler));
 
 
 
