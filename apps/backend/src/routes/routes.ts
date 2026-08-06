@@ -2,6 +2,7 @@ import { app } from "../..";
 import { createBoard } from "../controllers/board/createBoard";
 import { getBoardDetails } from "../controllers/board/getaBoard";
 import { getAllBoards } from "../controllers/board/getBoards";
+import { renameBoard } from "../controllers/board/renameBoard";
 import { loginHandler } from "../controllers/loginHandler";
 import { inviteUserHandler } from "../controllers/organisation/addUser";
 import { OrgMembersHandler } from "../controllers/organisation/allMembers";
@@ -70,7 +71,7 @@ app.get("/api/boards/:boardId", asyncHandler(getBoardDetails));
 
 
 // Rename or update board details.
-app.put("/api/boards/:boardId");
+app.put("/api/boards/:boardId", asyncHandler(renameBoard));
 
 // Delete a board and its associated data.
 app.delete("/api/boards/:boardId");
