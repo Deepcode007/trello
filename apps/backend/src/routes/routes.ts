@@ -1,5 +1,6 @@
 import { app } from "../..";
 import { loginHandler } from "../controllers/loginHandler";
+import { inviteUserHandler } from "../controllers/organisation/addUser";
 import { OrgMembersHandler } from "../controllers/organisation/allMembers";
 import { CreateOrgHandler } from "../controllers/organisation/Create";
 import { DeleteOrgHandler } from "../controllers/organisation/deteleOrg";
@@ -41,7 +42,7 @@ app.delete("/api/orgs/:orgId", asyncHandler(DeleteOrgHandler));
 app.get("/api/orgs/:orgId/members", asyncHandler(OrgMembersHandler));
 
 // Add a user to an organization (requires userId and role).
-app.post("/api/orgs/:orgId/members");
+app.post("/api/orgs/:orgId/members", asyncHandler(inviteUserHandler));
 
 // Update a user's role (e.g., promote to admin).
 app.put("/api/orgs/:orgId/members/:userId");
