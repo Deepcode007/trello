@@ -1,5 +1,6 @@
 import { app } from "../..";
 import { createBoard } from "../controllers/board/createBoard";
+import { deleteBoard } from "../controllers/board/deleteBoard";
 import { getBoardDetails } from "../controllers/board/getaBoard";
 import { getAllBoards } from "../controllers/board/getBoards";
 import { renameBoard } from "../controllers/board/renameBoard";
@@ -74,7 +75,7 @@ app.get("/api/boards/:boardId", asyncHandler(getBoardDetails));
 app.put("/api/boards/:boardId", asyncHandler(renameBoard));
 
 // Delete a board and its associated data.
-app.delete("/api/boards/:boardId");
+app.delete("/api/boards/:boardId", asyncHandler(deleteBoard));
 
 
 // Sections (Columns)
