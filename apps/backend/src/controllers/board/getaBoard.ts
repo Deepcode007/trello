@@ -35,7 +35,8 @@ export async function getBoardDetails(req: Request, res: Response)
             userId_orgId: {
                 userId: req.id,
                 orgId: board?.orgId
-            }
+            },
+            accepted: true
         }
     })
     

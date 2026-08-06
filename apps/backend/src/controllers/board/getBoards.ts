@@ -1,7 +1,7 @@
 import { prisma } from "db/prisma"
 import type { Request, Response } from "express"
 import zod from "zod"
-import { Not_Found, ValidationError } from "../../helpers/errorClass";
+import { Forbidden, Not_Found, ValidationError } from "../../helpers/errorClass";
 
 export async function getAllBoards(req: Request, res: Response)
 {
@@ -19,6 +19,7 @@ export async function getAllBoards(req: Request, res: Response)
             id: result.data.orgId,
         },
         select: {
+            id: true,
             boards: {
                 select: {
                     title: true,
@@ -32,11 +33,20 @@ export async function getAllBoards(req: Request, res: Response)
         }
     })
 
+    if (!org) throw new Not_Found("Org not found/invalid Org Id");
 
-    if (!org)
-    {
-        throw new Not_Found("Org not found/invalid Org Id");
-    }
+    const user = await prisma.membership.findUnique({
+        where: {
+            userId_orgId: {
+                orgId: org.id,
+                userId: req.id
+            },
+            accepted: true
+        }
+    })
+
+    if (!user) throw new Forbidden("Members only");
+
 
     return res.status(200).json({
         success: true,

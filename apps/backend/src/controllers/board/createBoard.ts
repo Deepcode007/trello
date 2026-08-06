@@ -28,7 +28,8 @@ export async function createBoard(req: Request, res: Response)
                     role: {
                         in: ["admin", "employee"]
                     },
-                    userId: req.id
+                    userId: req.id,
+                    accepted: true
                 }
             }
         }
