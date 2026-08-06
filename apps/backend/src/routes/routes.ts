@@ -1,4 +1,5 @@
 import { app } from "../..";
+import { getAllBoards } from "../controllers/board/getBoards";
 import { loginHandler } from "../controllers/loginHandler";
 import { inviteUserHandler } from "../controllers/organisation/addUser";
 import { OrgMembersHandler } from "../controllers/organisation/allMembers";
@@ -57,7 +58,7 @@ app.delete("/api/orgs/:orgId/members/", asyncHandler(deleteUserHandler));
 // Boards
 
 // List all boards within a specific organization.
-app.get("/api/orgs/:orgId/boards");
+app.get("/api/orgs/:orgId/boards", asyncHandler(getAllBoards));
 
 // Create a new board (title) within an organization.
 app.post("/api/orgs/:orgId/boards");
