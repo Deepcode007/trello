@@ -1,5 +1,6 @@
 import { app } from "../..";
 import { createBoard } from "../controllers/board/createBoard";
+import { getBoardDetails } from "../controllers/board/getaBoard";
 import { getAllBoards } from "../controllers/board/getBoards";
 import { loginHandler } from "../controllers/loginHandler";
 import { inviteUserHandler } from "../controllers/organisation/addUser";
@@ -65,7 +66,7 @@ app.get("/api/orgs/:orgId/boards", asyncHandler(getAllBoards));
 app.post("/api/orgs/:orgId/boards", asyncHandler(createBoard));
 
 // Get board details, typically fetching sections and issues together.
-app.get("/api/boards/:boardId");
+app.get("/api/boards/:boardId", asyncHandler(getBoardDetails));
 
 
 // Rename or update board details.
