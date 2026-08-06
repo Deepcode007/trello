@@ -1,4 +1,5 @@
 import { app } from "../..";
+import { createBoard } from "../controllers/board/createBoard";
 import { getAllBoards } from "../controllers/board/getBoards";
 import { loginHandler } from "../controllers/loginHandler";
 import { inviteUserHandler } from "../controllers/organisation/addUser";
@@ -61,7 +62,7 @@ app.delete("/api/orgs/:orgId/members/", asyncHandler(deleteUserHandler));
 app.get("/api/orgs/:orgId/boards", asyncHandler(getAllBoards));
 
 // Create a new board (title) within an organization.
-app.post("/api/orgs/:orgId/boards");
+app.post("/api/orgs/:orgId/boards", asyncHandler(createBoard));
 
 // Get board details, typically fetching sections and issues together.
 app.get("/api/boards/:boardId");
