@@ -4,6 +4,7 @@ import { deleteBoard } from "../controllers/board/deleteBoard";
 import { getBoardDetails } from "../controllers/board/getaBoard";
 import { getAllBoards } from "../controllers/board/getBoards";
 import { renameBoard } from "../controllers/board/renameBoard";
+import { createIssue } from "../controllers/issues/createIssue";
 import { getAllIssues } from "../controllers/issues/getAllIssues";
 import { loginHandler } from "../controllers/loginHandler";
 import { inviteUserHandler } from "../controllers/organisation/addUser";
@@ -105,7 +106,7 @@ app.delete("/api/sections/:sectionId", asyncHandler(deleteSection));
 app.get("/api/sections/:sectionId/issues", asyncHandler(getAllIssues));
 
 // Create a new issue (title, description, boardId).
-app.post("/api/sections/:sectionId/issues");
+app.post("/api/sections/:sectionId/issues", asyncHandler(createIssue));
 
 // 	Get full details of a specific issue.
 app.get("/api/issues/:issueId");
