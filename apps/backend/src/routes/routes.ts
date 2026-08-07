@@ -15,6 +15,7 @@ import { deleteUserHandler } from "../controllers/organisation/removeUser";
 import { UpdateOrgHandler } from "../controllers/organisation/updateDetails";
 import { updateRoleHandler } from "../controllers/organisation/updateRole";
 import { profileHandler } from "../controllers/profileHandler";
+import { createSection } from "../controllers/sections/createSection";
 import { getAllSections } from "../controllers/sections/getAllSections";
 import { signupHandler } from "../controllers/signupHandler";
 import { asyncHandler } from "../helpers/asyncHandler";
@@ -85,7 +86,7 @@ app.delete("/api/boards/:boardId", asyncHandler(deleteBoard));
 app.get("/api/boards/:boardId/sections", asyncHandler(getAllSections));
 
 // Create a new section (title) on a board.
-app.post("/api/boards/:boardId/sections");
+app.post("/api/boards/:boardId/sections", asyncHandler(createSection));
 
 // Rename a specific section.
 app.put("/api/sections/:sectionId");
