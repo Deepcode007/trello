@@ -49,6 +49,6 @@ export async function getAllSections(req: Request, res: Response)
 
     return res.status(200).json({
         success: true,
-        data: section.filter(x=> {x.id, x.title})
+        data: section.map(x=> {x.id, x.title})
     })
 }
