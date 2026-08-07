@@ -11,7 +11,6 @@ export async function createIssue(req: Request, res: Response)
 
     const result2 = zod.object({
         title: zod.string(),
-        description: zod.string(),
         boardId: zod.uuid(),
         gh_url: zod.string().optional()
     }).safeParse(req.body);
