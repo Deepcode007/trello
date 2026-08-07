@@ -5,6 +5,7 @@ import { getBoardDetails } from "../controllers/board/getaBoard";
 import { getAllBoards } from "../controllers/board/getBoards";
 import { renameBoard } from "../controllers/board/renameBoard";
 import { createIssue } from "../controllers/issues/createIssue";
+import { deleteIssue } from "../controllers/issues/deleteIssue";
 import { getAllIssues } from "../controllers/issues/getAllIssues";
 import { issueDetail } from "../controllers/issues/issueDetail";
 import { updateIssue } from "../controllers/issues/updateIssue";
@@ -117,7 +118,7 @@ app.get("/api/issues/:issueId", asyncHandler(issueDetail));
 app.put("/api/issues/:issueId", asyncHandler(updateIssue));
 
 // Delete an issue.
-app.delete("/api/issues/:issueId");
+app.delete("/api/issues/:issueId", asyncHandler(deleteIssue));
 
 
 // Issue Assignments & Comments
