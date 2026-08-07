@@ -7,6 +7,7 @@ import { renameBoard } from "../controllers/board/renameBoard";
 import { createIssue } from "../controllers/issues/createIssue";
 import { getAllIssues } from "../controllers/issues/getAllIssues";
 import { issueDetail } from "../controllers/issues/issueDetail";
+import { updateIssue } from "../controllers/issues/updateIssue";
 import { loginHandler } from "../controllers/loginHandler";
 import { inviteUserHandler } from "../controllers/organisation/addUser";
 import { OrgMembersHandler } from "../controllers/organisation/allMembers";
@@ -113,7 +114,7 @@ app.post("/api/sections/:sectionId/issues", asyncHandler(createIssue));
 app.get("/api/issues/:issueId", asyncHandler(issueDetail));
 
 // Update an issue (edit text, or move to a new sectionId).
-app.put("/api/issues/:issueId");
+app.put("/api/issues/:issueId", asyncHandler(updateIssue));
 
 // Delete an issue.
 app.delete("/api/issues/:issueId");
