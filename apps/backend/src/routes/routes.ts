@@ -15,6 +15,7 @@ import { deleteUserHandler } from "../controllers/organisation/removeUser";
 import { UpdateOrgHandler } from "../controllers/organisation/updateDetails";
 import { updateRoleHandler } from "../controllers/organisation/updateRole";
 import { profileHandler } from "../controllers/profileHandler";
+import { getAllSections } from "../controllers/sections/getAllSections";
 import { signupHandler } from "../controllers/signupHandler";
 import { asyncHandler } from "../helpers/asyncHandler";
 import { auth } from "../middlewares/auth";
@@ -81,7 +82,7 @@ app.delete("/api/boards/:boardId", asyncHandler(deleteBoard));
 // Sections (Columns)
 
 // List all sections for a specific board.
-app.get("/api/boards/:boardId/sections");
+app.get("/api/boards/:boardId/sections", asyncHandler(getAllSections));
 
 // Create a new section (title) on a board.
 app.post("/api/boards/:boardId/sections");
