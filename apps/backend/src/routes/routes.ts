@@ -17,6 +17,7 @@ import { updateRoleHandler } from "../controllers/organisation/updateRole";
 import { profileHandler } from "../controllers/profileHandler";
 import { createSection } from "../controllers/sections/createSection";
 import { getAllSections } from "../controllers/sections/getAllSections";
+import { renameSection } from "../controllers/sections/renameSectioon";
 import { signupHandler } from "../controllers/signupHandler";
 import { asyncHandler } from "../helpers/asyncHandler";
 import { auth } from "../middlewares/auth";
@@ -89,7 +90,7 @@ app.get("/api/boards/:boardId/sections", asyncHandler(getAllSections));
 app.post("/api/boards/:boardId/sections", asyncHandler(createSection));
 
 // Rename a specific section.
-app.put("/api/sections/:sectionId");
+app.put("/api/sections/:sectionId", asyncHandler(renameSection));
 
 // Delete a section (and handle/reassign orphaned issues).
 app.delete("/api/sections/:sectionId");
