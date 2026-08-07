@@ -28,7 +28,7 @@ model user {
 }
 
 model orgs {
-    id          String       @id @default(uuid())
+    id          String  @id @default(uuid())
     name        String
     description String
     visible     Boolean      @default(true)
@@ -47,6 +47,7 @@ model membership {
     orgId    String
     org      orgs    @relation(fields: [orgId], references: [id], onDelete: Cascade)
     @@unique([userId, orgId])
+    @@index([orgId])
 }
 
 model boards {
@@ -73,9 +74,12 @@ model issues {
     gh_url        String?
     boardId       String
     board         boards          @relation(fields: [boardId], references: [id], onDelete: Cascade)
-    sectionId     String
-    section       sections        @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+    sectionId     String?
+    section       sections?       @relation(fields: [sectionId], references: [id], onDelete: SetNull)
     issueMappings issue_mapping[]
+
+    @@index([boardId, sectionId])
+    @@index([sectionId])
 }
 
 model issue_mapping {
@@ -84,4 +88,5 @@ model issue_mapping {
     user    user   @relation(fields: [userId], references: [id], onDelete: Cascade)
     issueId String
     issue   issues @relation(fields: [issueId], references: [id], onDelete: Cascade)
+    @@unique([userId, issueId])
 }
