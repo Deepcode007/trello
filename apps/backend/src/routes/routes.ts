@@ -4,6 +4,7 @@ import { deleteBoard } from "../controllers/board/deleteBoard";
 import { getBoardDetails } from "../controllers/board/getaBoard";
 import { getAllBoards } from "../controllers/board/getBoards";
 import { renameBoard } from "../controllers/board/renameBoard";
+import { getAllComments } from "../controllers/comments/getAllcomments";
 import { assignIssue } from "../controllers/issues/assignIssue";
 import { createIssue } from "../controllers/issues/createIssue";
 import { deleteIssue } from "../controllers/issues/deleteIssue";
@@ -134,7 +135,7 @@ app.post("/api/issues/:issueId/assignees", asyncHandler(assignIssue));
 app.delete("/api/issues/:issueId/assignees/", asyncHandler(removeAssignment));
 
 // List all comments on a specific issue.
-app.get("/api/issues/:issueId/comments");
+app.get("/api/issues/:issueId/comments", asyncHandler(getAllComments));
 
 // Add a comment to an issue (tied to the current user).
 app.post("/api/issues/:issueId/comments");

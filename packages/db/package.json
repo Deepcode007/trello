@@ -2,7 +2,8 @@
   "name": "db",
   "module": "index.ts",
   "exports": {
-    "./prisma": "./db.ts"
+    "./prisma": "./db.ts",
+    "./Role": "./generated/prisma/enums.ts"
   },
   "type": "module",
   "private": true,
