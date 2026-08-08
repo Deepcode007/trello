@@ -5,6 +5,7 @@ import { getBoardDetails } from "../controllers/board/getaBoard";
 import { getAllBoards } from "../controllers/board/getBoards";
 import { renameBoard } from "../controllers/board/renameBoard";
 import { addComment } from "../controllers/comments/addComment";
+import { deleteComment } from "../controllers/comments/deleteComment";
 import { editComment } from "../controllers/comments/editComment";
 import { getAllComments } from "../controllers/comments/getAllcomments";
 import { assignIssue } from "../controllers/issues/assignIssue";
@@ -146,6 +147,6 @@ app.post("/api/issues/:issueId/comments", asyncHandler(addComment));
 app.put("/api/comments/:commentId", asyncHandler(editComment));
 
 // Delete a comment.
-app.delete("/api/comments/:commentId");
+app.delete("/api/comments/:commentId", asyncHandler(deleteComment));
 
 

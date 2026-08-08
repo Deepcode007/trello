@@ -24,6 +24,7 @@ export async function getAllComments(req: Request, res: Response)
             id: true,
             description: true,
             createdAt: true,
+            deletedAt: true,
             parentId: true,
             user: {
                 select: {
