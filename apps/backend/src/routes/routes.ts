@@ -4,6 +4,7 @@ import { deleteBoard } from "../controllers/board/deleteBoard";
 import { getBoardDetails } from "../controllers/board/getaBoard";
 import { getAllBoards } from "../controllers/board/getBoards";
 import { renameBoard } from "../controllers/board/renameBoard";
+import { assignIssue } from "../controllers/issues/assignIssue";
 import { createIssue } from "../controllers/issues/createIssue";
 import { deleteIssue } from "../controllers/issues/deleteIssue";
 import { getAllIssues } from "../controllers/issues/getAllIssues";
@@ -125,7 +126,8 @@ app.delete("/api/issues/:issueId", asyncHandler(deleteIssue));
 
 
 // Assign a user to an issue (creates issues_mapping record).
-app.post("/api/issues/:issueId/assignees");
+// take emails of users => []
+app.post("/api/issues/:issueId/assignees", asyncHandler(assignIssue));
 
 // Remove a user's assignment from an issue.
 app.delete("/api/issues/:issueId/assignees/:userId");
