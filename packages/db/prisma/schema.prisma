@@ -25,35 +25,35 @@ model user {
     password      String
     memberships   membership[]
     issueMappings issue_mapping[]
-    comments comments[]
+    comments      comments[]
 }
 
 model orgs {
     id          String  @id @default(uuid())
     name        String
     description String
-    visible     Boolean      @default(true)
+    visible     Boolean     @default(true)
     
     members     membership[]
     boards      boards[]
 }
 
 model membership {
-    id   String @id @default(uuid())
-    role Role
-    accepted Boolean @default(false)
+    id          String  @id @default(uuid())
+    role        Role
+    accepted    Boolean @default(false)
 
-    userId   String
-    user     user    @relation(fields: [userId], references: [id], onDelete: Cascade)
-    orgId    String
-    org      orgs    @relation(fields: [orgId], references: [id], onDelete: Cascade)
+    userId      String
+    user        user    @relation(fields: [userId], references: [id], onDelete: Cascade)
+    orgId       String
+    org         orgs    @relation(fields: [orgId], references: [id], onDelete: Cascade)
     @@unique([userId, orgId])
     @@index([orgId])
 }
 
 model boards {
-    id    String @id @default(uuid())
-    title String
+    id      String       @id @default(uuid())
+    title   String
 
     orgId   String
     org     orgs       @relation(fields: [orgId], references: [id], onDelete: Cascade)
@@ -62,10 +62,10 @@ model boards {
 }
 
 model sections {
-    id      String   @id @default(uuid())
+    id      String      @id @default(uuid())
     title   String
     boardId String
-    board   boards   @relation(fields: [boardId], references: [id], onDelete: Cascade)
+    board   boards      @relation(fields: [boardId], references: [id], onDelete: Cascade)
     issues  issues[]
 }
 
@@ -78,7 +78,7 @@ model issues {
     sectionId     String?
     section       sections?       @relation(fields: [sectionId], references: [id], onDelete: SetNull)
     issueMappings issue_mapping[]
-    comments comments[]
+    comments      comments[]
 
     @@index([boardId, sectionId])
     @@index([sectionId])
@@ -94,15 +94,16 @@ model issue_mapping {
 }
 
 model comments {
-    id String @id @default(uuid())
+    id          String      @id @default(uuid())
     description String
-    issueId String
-    issue issues @relation(fields: [issueId], references: [id])
-    userId String
-    user user @relation(fields: [userId], references: [id])
-    parentId String?
-    parent comments? @relation("CommentReplies", fields: [parentId], references: [id])
-    children comments[] @relation("CommentReplies")
+    issueId     String
+    issue       issues      @relation(fields: [issueId], references: [id])
+    userId      String
+    user        user        @relation(fields: [userId], references: [id])
+    parentId    String?
+    parent      comments?   @relation("CommentReplies", fields: [parentId], references: [id])
+    children    comments[]  @relation("CommentReplies")
 
-    createdAt DateTime @default(now())
+    createdAt   DateTime    @default(now())
+    deletedAt   DateTime?
 }
