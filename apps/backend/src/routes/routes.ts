@@ -9,6 +9,7 @@ import { createIssue } from "../controllers/issues/createIssue";
 import { deleteIssue } from "../controllers/issues/deleteIssue";
 import { getAllIssues } from "../controllers/issues/getAllIssues";
 import { issueDetail } from "../controllers/issues/issueDetail";
+import { removeAssignment } from "../controllers/issues/removeAssignment";
 import { updateIssue } from "../controllers/issues/updateIssue";
 import { loginHandler } from "../controllers/loginHandler";
 import { inviteUserHandler } from "../controllers/organisation/addUser";
@@ -129,8 +130,8 @@ app.delete("/api/issues/:issueId", asyncHandler(deleteIssue));
 // take emails of users => []
 app.post("/api/issues/:issueId/assignees", asyncHandler(assignIssue));
 
-// Remove a user's assignment from an issue.
-app.delete("/api/issues/:issueId/assignees/:userId");
+// Remove a user's assignment from an issue. email in body
+app.delete("/api/issues/:issueId/assignees/", asyncHandler(removeAssignment));
 
 // List all comments on a specific issue.
 app.get("/api/issues/:issueId/comments");
