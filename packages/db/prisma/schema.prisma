@@ -25,6 +25,7 @@ model user {
     password      String
     memberships   membership[]
     issueMappings issue_mapping[]
+    comments comments[]
 }
 
 model orgs {
@@ -77,6 +78,7 @@ model issues {
     sectionId     String?
     section       sections?       @relation(fields: [sectionId], references: [id], onDelete: SetNull)
     issueMappings issue_mapping[]
+    comments comments[]
 
     @@index([boardId, sectionId])
     @@index([sectionId])
@@ -89,4 +91,18 @@ model issue_mapping {
     issueId String
     issue   issues @relation(fields: [issueId], references: [id], onDelete: Cascade)
     @@unique([userId, issueId])
+}
+
+model comments {
+    id String @id @default(uuid())
+    description String
+    issueId String
+    issue issues @relation(fields: [issueId], references: [id])
+    userId String
+    user user @relation(fields: [userId], references: [id])
+    parentId String?
+    parent comments? @relation("CommentReplies", fields: [parentId], references: [id])
+    children comments[] @relation("CommentReplies")
+
+    createdAt DateTime @default(now())
 }
