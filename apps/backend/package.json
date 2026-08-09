@@ -3,8 +3,16 @@
   "module": "index.ts",
   "type": "module",
   "private": true,
+  "scripts": {
+    "dev": "bun --watch index.ts",
+    "test": "bun test"
+  },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "@types/pg": "^8.21.0",
+    "@types/supertest": "^7.2.1",
+    "pg": "^8.23.0",
+    "supertest": "^7.2.2"
   },
   "peerDependencies": {
     "typescript": "^5"

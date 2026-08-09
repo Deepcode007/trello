@@ -1,6 +1,6 @@
 import express from "express";
 
-import {envSchema} from "./src/types/env.ts";
+import { envSchema } from "./src/types/env.ts";
 
 export const app = express();
 app.use(express.json());
