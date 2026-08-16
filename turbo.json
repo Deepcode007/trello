@@ -31,6 +31,7 @@
             "persistent": true
         },
         "test": {
+            "cache": false,
             "outputs": []
         }
     }
