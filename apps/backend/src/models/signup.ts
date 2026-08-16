@@ -3,7 +3,7 @@ import zod from "zod";
 export const SignupSchema = zod.object({
     email: zod.email(),
     password: zod.string().trim()
-        .min(6, "Minimum 8 characters")
+        .min(6, "Minimum 6 characters")
         .max(20, "Maximum 20 characters")
         .regex(/[A-Z]/, "Requires one uppercase letter")
         .regex(/[a-z]/, "Requires one lowercase letter")
