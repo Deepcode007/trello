@@ -1,4 +1,3 @@
-import { app } from "../..";
 import type { Request, Response } from "express";
 import bcrypt from "bcrypt";
 import { token } from "../middlewares/token";
@@ -24,7 +23,7 @@ export async function loginHandler(req: Request, res: Response)
 		})
 
 		if (!user) {
-			return res.status(400).json({
+			return res.status(404).json({
 				success: false,
 				error: "User not found"
 			})
@@ -37,7 +36,7 @@ export async function loginHandler(req: Request, res: Response)
 			})
 		}
 
-		return res.status(201).json({
+		return res.status(200).json({
 			success: true,
 			data: token(user.email, user.id)
 		})
