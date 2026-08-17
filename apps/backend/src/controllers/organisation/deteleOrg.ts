@@ -21,7 +21,8 @@ export async function DeleteOrgHandler(req: Request, res: Response)
             members: {
                 some: {
                     userId: req.id,
-                    role: "admin"
+                    role: "admin",
+                    accepted: true
                 }
             }
         }

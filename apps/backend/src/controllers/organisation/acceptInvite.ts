@@ -25,7 +25,11 @@ export async function acceptInviteHandler(req: Request, res: Response)
             }
         },
         select: {
-            members: true
+            members: {
+                where: {
+                    userId: req.id
+                }
+            }
         }
     });
 
