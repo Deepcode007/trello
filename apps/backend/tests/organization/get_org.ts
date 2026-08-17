@@ -1,10 +1,13 @@
-import { beforeAll, describe, expect, it } from "bun:test";
+import { beforeAll, expect, it } from "bun:test";
 import { create_user } from "../helpers/create_User";
 import { login_user } from "../helpers/login_user";
 import { create_org } from "../helpers/create_org";
+import { invite_user } from "../helpers/invite_user";
+import { accept_invite } from "../helpers/accept_invite";
+import { update_user_role } from "../helpers/update_role";
 
 
-export async function getAllorgs()
+export function getAllorgs()
 {
     let email: string, userid: string, token: string;
     beforeAll(async () =>
@@ -100,14 +103,66 @@ export async function getAllorgs()
         expect(res.status).toBe(200);
         const body = await res.json() as {
             success: true,
-            data:  {
-               name: string;
-               id: string;
-               description: string;
-               visible: boolean;
-           }
+            data: {
+                name: string;
+                id: string;
+                description: string;
+                visible: boolean;
+            }
         };
         expect(body.data.id).toBe(id);
         expect(body.data.visible).toBe(false);
+    })
+
+    it("List all users and their roles in the organization.", async () =>
+    {
+        const org = await create_org(token, `Org_name+${Math.random() * 21}`);
+
+        const user1 = create_user();
+        const user2 = create_user();
+
+        let tkn1 = login_user((await user1).email, (await user1).password);
+        let tkn2 = login_user((await user2).email, (await user2).password);
+
+        let p1 = invite_user(org.id, (await user1).email, token);
+        let p2 = invite_user(org.id, (await user2).email, token);
+
+        await Promise.all([p1, p2]);
+
+        let p3 = accept_invite(await tkn1, org.id);
+        let p4 = accept_invite(await tkn2, org.id);
+
+        await Promise.all([p3, p4]);
+
+        await update_user_role(org.id, (await user1).email, token, "employee");
+
+        const data = await (await fetch(`${globalThis.TEST_BASE_URL}/api/orgs/${org.id}/members`, {
+            method: "GET",
+            headers: { "Content-Type": "application/json", authorization: `Bearer ${token}` },
+        })).json() as {
+            success: true,
+            data: ({
+                user: {
+                    email: string;
+                    username: string;
+                };
+            } & {
+                orgId: string;
+                role: string;
+                accepted: boolean;
+            })[]
+        } | {
+            success: false,
+            error: string
+        };
+
+        expect(data.success).toBe(true);
+        if (data.success)
+        {
+            expect(data.data.length).toBe(3);
+            expect(data.data.filter(x => x.role === "admin").length).toBe(1);
+            expect(data.data.filter(x => x.role === "contributor").length).toBe(1);
+            expect(data.data.filter(x => x.role === "employee").length).toBe(1);
+        }
     })
 }

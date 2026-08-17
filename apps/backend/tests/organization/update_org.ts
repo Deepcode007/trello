@@ -4,7 +4,7 @@ import { login_user } from "../helpers/login_user";
 import { create_org } from "../helpers/create_org";
 import { invite_user } from "../helpers/invite_user";
 
-export async function update_orgs()
+export function update_orgs()
 {
     let user_id: string, org_id: string, token: string;
     beforeAll(async() =>
