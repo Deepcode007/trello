@@ -16,6 +16,7 @@ import { issueDetail } from "../controllers/issues/issueDetail";
 import { removeAssignment } from "../controllers/issues/removeAssignment";
 import { updateIssue } from "../controllers/issues/updateIssue";
 import { loginHandler } from "../controllers/loginHandler";
+import { acceptInviteHandler } from "../controllers/organisation/acceptInvite";
 import { inviteUserHandler } from "../controllers/organisation/addUser";
 import { OrgMembersHandler } from "../controllers/organisation/allMembers";
 import { CreateOrgHandler } from "../controllers/organisation/Create";
@@ -51,9 +52,10 @@ app.get("/api/orgs", asyncHandler(getCurrentOrgs));
 app.post("/api/orgs", asyncHandler(CreateOrgHandler));
 
 // Get details of a specific organization.
-app.post("/api/orgs/:orgId", asyncHandler(getOrgDetails));
+app.get("/api/orgs/:orgId", asyncHandler(getOrgDetails));
 
 // Update an organization's details.
+// name, desc, visible
 
 app.put("/api/orgs/:orgId", asyncHandler(UpdateOrgHandler));
 
@@ -66,11 +68,14 @@ app.get("/api/orgs/:orgId/members", asyncHandler(OrgMembersHandler));
 // Add a user to an organization (requires userId and role).
 app.post("/api/orgs/:orgId/members", asyncHandler(inviteUserHandler));
 
+// Accept an invitation
+app.put("/api/orgs/:orgId/accept", asyncHandler(acceptInviteHandler));
+
 // Update a user's role (e.g., promote to admin). email, role in body
-app.put("/api/orgs/:orgId/members/", asyncHandler(updateRoleHandler));
+app.put("/api/orgs/:orgId/members", asyncHandler(updateRoleHandler));
 
 // Remove a user from an organization. (incl admin leave/remove). email in body
-app.delete("/api/orgs/:orgId/members/", asyncHandler(deleteUserHandler));
+app.delete("/api/orgs/:orgId/members", asyncHandler(deleteUserHandler));
 
 
 

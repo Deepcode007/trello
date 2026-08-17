@@ -6,7 +6,7 @@ export async function getCurrentOrgs(req: Request, res: Response)
 {
     let orgs = await prisma.membership.findMany({
         where: {
-            id: req.id
+            userId: req.id
         }
     })
 
