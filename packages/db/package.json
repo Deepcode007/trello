@@ -5,10 +5,14 @@
     "./prisma": "./db.ts",
     "./Role": "./generated/prisma/enums.ts"
   },
+  "scripts": {
+    "test:setup": "bun run scripts/clearDB.ts"
+  },
   "type": "module",
   "private": true,
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "@types/pg": "^8.21.0"
   },
   "peerDependencies": {
     "typescript": "^5"
@@ -17,6 +21,7 @@
     "@prisma/adapter-pg": "^7.9.1",
     "@prisma/client": "^7.9.1",
     "dotenv": "^17.4.2",
+    "pg": "^8.23.0",
     "prisma": "^7.9.1"
   }
 }
