@@ -165,4 +165,34 @@ export function getAllorgs()
             expect(data.data.filter(x => x.role === "employee").length).toBe(1);
         }
     })
+
+    it("rejects a duplicate org name for the same admin", async () =>
+    {
+        const name = `Dup_org+${crypto.randomUUID()}`;
+        await create_org(token, name);
+
+        const res = await fetch(`${globalThis.TEST_BASE_URL}/api/orgs`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", authorization: `Bearer ${token}` },
+            body: JSON.stringify({ name, description: "duplicate" })
+        });
+
+        expect(res.status).toBe(409);
+    })
+
+    it("allows the same org name for a different admin", async () =>
+    {
+        const name = `Shared_org+${crypto.randomUUID()}`;
+        await create_org(token, name);
+
+        const other = await create_user();
+        const otherToken = await login_user(other.email, other.password);
+        const res = await fetch(`${globalThis.TEST_BASE_URL}/api/orgs`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", authorization: `Bearer ${otherToken}` },
+            body: JSON.stringify({ name, description: "same name, different admin" })
+        });
+
+        expect(res.status).toBe(201);
+    })
 }

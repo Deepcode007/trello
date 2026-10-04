@@ -12,9 +12,9 @@ export async function CreateOrgHandler(req: Request, res: Response)
         throw new ValidationError();
     }
 
-    const org = await prisma.membership.findUnique({
+    const org = await prisma.membership.findFirst({
         where: {
-            id: req.id,
+            userId: req.id,
             role: "admin",
             org: {
                 name: result.data.name
@@ -24,7 +24,7 @@ export async function CreateOrgHandler(req: Request, res: Response)
 
     if (org != null)
     {
-        throw new Duplicate();
+        throw new Duplicate("You already administer an organisation with this name");
     }
 
     const newOrg = await prisma.orgs.create({
