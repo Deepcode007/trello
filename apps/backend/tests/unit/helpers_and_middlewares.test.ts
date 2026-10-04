@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import jwt from "jsonwebtoken";
 import { buildCommentTree } from "../../src/helpers/commentTree";
 import {
     AppError,
@@ -275,6 +276,32 @@ describe("Helpers, Middlewares, and Models Tests", () =>
 
             expect(capturedStatus).toBe(401);
             expect(capturedJson.error).toBe("User unauthorised");
+        });
+
+        it("returns 401 when authorization scheme is not Bearer", () =>
+        {
+            const jwtToken = token("test@example.com", crypto.randomUUID());
+            let capturedStatus = 0;
+            const res = {
+                status: (code: number) =>
+                {
+                    capturedStatus = code;
+                    return { json: () => {} };
+                }
+            } as any;
+
+            let nextCalled = false;
+            auth({ headers: { authorization: `Basic ${jwtToken}` } } as any, res, () => { nextCalled = true; });
+
+            expect(capturedStatus).toBe(401);
+            expect(nextCalled).toBe(false);
+        });
+
+        it("issues tokens that carry an expiry", () =>
+        {
+            const decoded = jwt.decode(token("test@example.com", crypto.randomUUID())) as { exp?: number; iat: number };
+            expect(decoded.exp).toBeDefined();
+            expect(decoded.exp!).toBeGreaterThan(decoded.iat);
         });
 
         it("returns 401 when token is invalid or malformed", () =>

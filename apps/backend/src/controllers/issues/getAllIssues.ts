@@ -14,27 +14,17 @@ export async function getAllIssues(req: Request, res: Response)
         throw new ValidationError();
     }
 
-    const issues = await prisma.issues.findMany({
+    const section = await prisma.sections.findUnique({
         where: {
-            sectionId: result.data.sectionId,
-            board: {
-                org: {
-                    members: {
-                        some: {
-                            userId: req.id,
-                            accepted: true
-                        }
-                    }
-                }
-            }
+            id: result.data.sectionId
         },
         select: {
-            id: true,
             title: true,
-            gh_url: true,
-            section: {
+            issues: {
                 select: {
-                    title: true
+                    id: true,
+                    title: true,
+                    gh_url: true
                 }
             },
             board: {
@@ -43,9 +33,9 @@ export async function getAllIssues(req: Request, res: Response)
                     org: {
                         select: {
                             members: {
-                                select: {
-                                    userId: true,
-                                    role: true
+                                where: {
+                                    userId: req.id,
+                                    accepted: true
                                 }
                             }
                         }
@@ -55,18 +45,17 @@ export async function getAllIssues(req: Request, res: Response)
         }
     })
 
-    if (!issues[0]?.section) throw new Not_Found("Section not found");
-    if (issues[0] && issues[0].board.org.members.length === 0) throw new Forbidden("Members only");
-
+    if (!section) throw new Not_Found("Section not found");
+    if (section.board.org.members.length === 0) throw new Forbidden("Members only");
 
     return res.status(200).json({
         success: true,
-        data: issues.map(x => ({
+        data: section.issues.map(x => ({
             id: x.id,
             title: x.title,
             gh_url: x.gh_url,
-            section: x.section,
-            board: x.board.title
+            section: { title: section.title },
+            board: section.board.title
         }))
     })
 }

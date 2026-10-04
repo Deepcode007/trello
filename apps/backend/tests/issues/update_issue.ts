@@ -145,4 +145,37 @@ export function update_issue_test()
         expect(body.success).toBe(true);
         expect(body.data.sectionId).toBe(section2Id);
     });
+
+    it("Fails with 400 when moving issue to a section on a different board", async () =>
+    {
+        const otherBoard = await create_boards(adminToken, orgId);
+        const otherSection = await create_sections(adminToken, otherBoard!.id);
+        const res = await fetch(`${globalThis.TEST_BASE_URL}/api/issues/${issueId}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json", authorization: `Bearer ${adminToken}` },
+            body: JSON.stringify({ sectionId: otherSection!.id })
+        });
+        expect(res.status).toBe(400);
+    });
+
+    it("Fails with 400 when sectionId is not a UUID", async () =>
+    {
+        const res = await fetch(`${globalThis.TEST_BASE_URL}/api/issues/${issueId}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json", authorization: `Bearer ${adminToken}` },
+            body: JSON.stringify({ sectionId: "not-a-uuid" })
+        });
+        expect(res.status).toBe(400);
+    });
+
+    it("Issue is no longer listed in its old section after being moved", async () =>
+    {
+        const res = await fetch(`${globalThis.TEST_BASE_URL}/api/sections/${section1Id}/issues`, {
+            method: "GET",
+            headers: { "Content-Type": "application/json", authorization: `Bearer ${adminToken}` }
+        });
+        expect(res.status).toBe(200);
+        const body = await res.json() as { success: boolean; data: { id: string }[] };
+        expect(body.data.map(x => x.id)).not.toContain(issueId);
+    });
 }

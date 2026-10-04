@@ -55,7 +55,7 @@ export function create_issue_test()
         expect(res.status).toBe(400);
     });
 
-    it("Fails with 400 when missing title or boardId", async () =>
+    it("Fails with 400 when missing boardId", async () =>
     {
         const res = await fetch(`${globalThis.TEST_BASE_URL}/api/sections/${sectionId}/issues`, {
             method: "POST",
@@ -116,5 +116,25 @@ export function create_issue_test()
         expect(body.success).toBe(true);
         expect(body.data.title).toBe(title);
         expect(body.data.gh_url).toBe(gh_url);
+    });
+
+    it("Fails with 400 when title is missing", async () =>
+    {
+        const res = await fetch(`${globalThis.TEST_BASE_URL}/api/sections/${sectionId}/issues`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", authorization: `Bearer ${adminToken}` },
+            body: JSON.stringify({ boardId })
+        });
+        expect(res.status).toBe(400);
+    });
+
+    it("Fails with 400 when boardId is not a UUID", async () =>
+    {
+        const res = await fetch(`${globalThis.TEST_BASE_URL}/api/sections/${sectionId}/issues`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", authorization: `Bearer ${adminToken}` },
+            body: JSON.stringify({ title: "Issue", boardId: "not-a-uuid" })
+        });
+        expect(res.status).toBe(400);
     });
 }

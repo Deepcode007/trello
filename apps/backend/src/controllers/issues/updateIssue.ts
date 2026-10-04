@@ -20,20 +20,12 @@ export async function updateIssue(req: Request, res: Response)
         throw new ValidationError();
     }
 
-    let sectionCheck = true;
-    if (result2.data.sectionId)
-    {
-        const sec = await prisma.sections.findUnique({
-            where: { id: result2.data.sectionId }
-        });
-        if (!sec) sectionCheck = false;
-    }
-
     const issue = await prisma.issues.findUnique({
         where: {
             id: result.data.issueId
         },
         select: {
+            boardId: true,
             board: {
                 select: {
                     org: {
@@ -56,7 +48,16 @@ export async function updateIssue(req: Request, res: Response)
 
     if (!issue) throw new Not_Found("Issue not found");
     if (issue.board.org.members.length === 0) throw new Forbidden("Admin/Employee access only");
-    if (!sectionCheck) throw new Not_Found("Section not found");
+
+    if (result2.data.sectionId)
+    {
+        const section = await prisma.sections.findUnique({
+            where: { id: result2.data.sectionId },
+            select: { boardId: true }
+        });
+        if (!section) throw new Not_Found("Section not found");
+        if (section.boardId !== issue.boardId) throw new ValidationError("Section belongs to a different board");
+    }
 
     const updated = await prisma.issues.update({
         where: {

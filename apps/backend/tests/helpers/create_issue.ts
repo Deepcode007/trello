@@ -24,9 +24,9 @@ export async function create_issue(token: string, sectionId: string, boardId: st
         error: string
     };
 
-    if (res.status != 201 && body.success == false)
+    if (res.status != 201 || !body.success)
     {
-        throw new Error(`Unable to create an issue, code: ${res.status}, error: ${body.error}`)
+        throw new Error(`Unable to create an issue, code: ${res.status}, error: ${body.success ? "unexpected status" : body.error}`)
     }
 
     if (body.success) return body.data;

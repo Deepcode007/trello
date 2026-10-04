@@ -19,9 +19,9 @@ export async function create_sections(token: string, boardId: string, title?: st
         error: string
     };
 
-    if (res.status != 201 && body.success == false)
+    if (res.status != 201 || !body.success)
     {
-        throw new Error(`Unable to create a board, code: ${res.status}, error: ${body.error}`)
+        throw new Error(`Unable to create a board, code: ${res.status}, error: ${body.success ? "unexpected status" : body.error}`)
     }
 
     if (body.success) return body.data;

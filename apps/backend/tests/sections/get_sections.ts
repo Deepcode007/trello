@@ -58,18 +58,39 @@ export function get_sections_test()
         expect(res.status).toBe(400);
     });
 
-    it("Fails with 404 when board has no sections", async () =>
+    it("Fails with 404 when board does not exist", async () =>
     {
-        const res = await fetch(`${globalThis.TEST_BASE_URL}/api/boards/${emptyBoardId}/sections`, {
+        const res = await fetch(`${globalThis.TEST_BASE_URL}/api/boards/${crypto.randomUUID()}/sections`, {
             method: "GET",
             headers: { "Content-Type": "application/json", authorization: `Bearer ${adminToken}` }
         });
         expect(res.status).toBe(404);
     });
 
+    it("Returns an empty list when board has no sections", async () =>
+    {
+        const res = await fetch(`${globalThis.TEST_BASE_URL}/api/boards/${emptyBoardId}/sections`, {
+            method: "GET",
+            headers: { "Content-Type": "application/json", authorization: `Bearer ${adminToken}` }
+        });
+        expect(res.status).toBe(200);
+        const body = await res.json() as { success: boolean; data: { id: string; title: string }[] };
+        expect(body.success).toBe(true);
+        expect(body.data).toEqual([]);
+    });
+
     it("Fails with 403 when user is non-member", async () =>
     {
         const res = await fetch(`${globalThis.TEST_BASE_URL}/api/boards/${boardId}/sections`, {
+            method: "GET",
+            headers: { "Content-Type": "application/json", authorization: `Bearer ${nonMemberToken}` }
+        });
+        expect(res.status).toBe(403);
+    });
+
+    it("Fails with 403 for non-member even when board has no sections", async () =>
+    {
+        const res = await fetch(`${globalThis.TEST_BASE_URL}/api/boards/${emptyBoardId}/sections`, {
             method: "GET",
             headers: { "Content-Type": "application/json", authorization: `Bearer ${nonMemberToken}` }
         });
@@ -83,12 +104,11 @@ export function get_sections_test()
             headers: { "Content-Type": "application/json", authorization: `Bearer ${contributorToken}` }
         });
         expect(res.status).toBe(200);
-        const body = await res.json() as any;
+        const body = await res.json() as { success: boolean; data: { id: string; title: string }[] };
         expect(body.success).toBe(true);
-        expect(Array.isArray(body.data)).toBe(true);
         expect(body.data.length).toBe(2);
-        expect(body.data[0].id).toBeDefined();
-        expect(body.data[0].title).toBeDefined();
+        expect(body.data.map(x => x.title)).toContain(section1Title);
+        expect(body.data[0]!.id).toBeDefined();
     });
 
     it("Admin gets list of sections successfully", async () =>
@@ -98,7 +118,7 @@ export function get_sections_test()
             headers: { "Content-Type": "application/json", authorization: `Bearer ${adminToken}` }
         });
         expect(res.status).toBe(200);
-        const body = await res.json() as any;
+        const body = await res.json() as { success: boolean; data: { id: string; title: string }[] };
         expect(body.success).toBe(true);
         expect(body.data.length).toBe(2);
     });

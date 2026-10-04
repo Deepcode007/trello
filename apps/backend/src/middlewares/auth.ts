@@ -6,8 +6,8 @@ const secret = env.jwt_key as Secret;
 
 export function auth(req: Request, res: Response, next: NextFunction) {
 	try {
-		const token = req.headers?.authorization?.split(' ')[1];
-		if (!token) {
+		const [scheme, token] = req.headers?.authorization?.split(' ') ?? [];
+		if (scheme !== "Bearer" || !token) {
 			return res.status(401).json({
 				success: false,
 				error: "User unauthorised"

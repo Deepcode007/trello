@@ -12,7 +12,7 @@ export function get_issues_test()
 {
     let adminToken: string, contributorToken: string, nonMemberToken: string;
     let orgId: string, boardId: string, sectionId: string, emptySectionId: string;
-    let issueTitle: string;
+    let issueTitle: string, boardTitle: string, sectionTitle: string;
 
     beforeAll(async () =>
     {
@@ -31,10 +31,10 @@ export function get_issues_test()
         nonMemberToken = await login_user(nonMemberUser.email, nonMemberUser.password);
 
         const board = await create_boards(adminToken, orgId);
-        boardId = board!.id;
+        boardId = board!.id; boardTitle = board!.title;
 
         const section = await create_sections(adminToken, boardId);
-        sectionId = section!.id;
+        sectionId = section!.id; sectionTitle = section!.title;
 
         const emptySection = await create_sections(adminToken, boardId);
         emptySectionId = emptySection!.id;
@@ -61,22 +61,43 @@ export function get_issues_test()
         expect(res.status).toBe(400);
     });
 
-    it("Fails with 404 when section has no issues or does not exist", async () =>
+    it("Fails with 404 when section does not exist", async () =>
     {
-        const res = await fetch(`${globalThis.TEST_BASE_URL}/api/sections/${emptySectionId}/issues`, {
+        const res = await fetch(`${globalThis.TEST_BASE_URL}/api/sections/${crypto.randomUUID()}/issues`, {
             method: "GET",
             headers: { "Content-Type": "application/json", authorization: `Bearer ${adminToken}` }
         });
         expect(res.status).toBe(404);
     });
 
-    it("Fails with 404/403 when user is non-member", async () =>
+    it("Returns an empty list when section has no issues", async () =>
+    {
+        const res = await fetch(`${globalThis.TEST_BASE_URL}/api/sections/${emptySectionId}/issues`, {
+            method: "GET",
+            headers: { "Content-Type": "application/json", authorization: `Bearer ${adminToken}` }
+        });
+        expect(res.status).toBe(200);
+        const body = await res.json() as { success: boolean; data: unknown[] };
+        expect(body.success).toBe(true);
+        expect(body.data).toEqual([]);
+    });
+
+    it("Fails with 403 when user is non-member", async () =>
     {
         const res = await fetch(`${globalThis.TEST_BASE_URL}/api/sections/${sectionId}/issues`, {
             method: "GET",
             headers: { "Content-Type": "application/json", authorization: `Bearer ${nonMemberToken}` }
         });
-        expect([403, 404]).toContain(res.status);
+        expect(res.status).toBe(403);
+    });
+
+    it("Fails with 403 for non-member even when section has no issues", async () =>
+    {
+        const res = await fetch(`${globalThis.TEST_BASE_URL}/api/sections/${emptySectionId}/issues`, {
+            method: "GET",
+            headers: { "Content-Type": "application/json", authorization: `Bearer ${nonMemberToken}` }
+        });
+        expect(res.status).toBe(403);
     });
 
     it("Member (contributor) gets issues list successfully", async () =>
@@ -100,8 +121,8 @@ export function get_issues_test()
         expect(body.data.length).toBe(1);
         expect(body.data[0]!.title).toBe(issueTitle);
         expect(body.data[0]!.gh_url).toBe("https://github.com/repo/issues/1");
-        expect(body.data[0]!.board).toBeDefined();
-        expect(body.data[0]!.section.title).toBeDefined();
+        expect(body.data[0]!.board).toBe(boardTitle);
+        expect(body.data[0]!.section.title).toBe(sectionTitle);
     });
 
     it("Admin gets issues list successfully", async () =>

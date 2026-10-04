@@ -14,16 +14,23 @@ export async function getAllSections(req: Request, res: Response)
         throw new ValidationError();
     }
 
-    const section = await prisma.sections.findMany({
+    const board = await prisma.boards.findUnique({
         where: {
-            boardId: result.data.boardId
+            id: result.data.boardId
         },
-        include: {
-            board: {
-                include: {
-                    org: {
-                        select: {
-                            id: true
+        select: {
+            section: {
+                select: {
+                    id: true,
+                    title: true
+                }
+            },
+            org: {
+                select: {
+                    members: {
+                        where: {
+                            userId: req.id,
+                            accepted: true
                         }
                     }
                 }
@@ -31,24 +38,11 @@ export async function getAllSections(req: Request, res: Response)
         }
     })
 
-    if (!section) throw new Not_Found("Board not found");
-    if (section.length===0) throw new Not_Found("No secitons available");
-
-    const user = await prisma.membership.findUnique({
-        where: {
-            userId_orgId: {
-                orgId: section[0]!.board.org.id,
-                userId: req.id
-            },
-            accepted: true
-        }
-    })
-
-    if (!user) throw new Forbidden("Members only");
-
+    if (!board) throw new Not_Found("Board not found");
+    if (board.org.members.length === 0) throw new Forbidden("Members only");
 
     return res.status(200).json({
         success: true,
-        data: section.map(x => ({ id: x.id, title: x.title }))
+        data: board.section.map(x => ({ id: x.id, title: x.title }))
     })
 }
