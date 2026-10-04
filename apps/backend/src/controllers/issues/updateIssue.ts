@@ -13,11 +13,20 @@ export async function updateIssue(req: Request, res: Response)
         title: zod.string().optional(),
         sectionId: zod.uuid().optional(),
         gh_url: zod.string().optional()
-    }).safeParse(req.params);
+    }).safeParse(req.body);
 
     if (!result.success || !result2.success)
     {
         throw new ValidationError();
+    }
+
+    let sectionCheck = true;
+    if (result2.data.sectionId)
+    {
+        const sec = await prisma.sections.findUnique({
+            where: { id: result2.data.sectionId }
+        });
+        if (!sec) sectionCheck = false;
     }
 
     const issue = await prisma.issues.findUnique({
@@ -25,11 +34,6 @@ export async function updateIssue(req: Request, res: Response)
             id: result.data.issueId
         },
         select: {
-            section: {
-                where: {
-                    id: result2.data.sectionId
-                }
-            },
             board: {
                 select: {
                     org: {
@@ -52,7 +56,7 @@ export async function updateIssue(req: Request, res: Response)
 
     if (!issue) throw new Not_Found("Issue not found");
     if (issue.board.org.members.length === 0) throw new Forbidden("Admin/Employee access only");
-    if (!issue.section) throw new Not_Found("Section not found");
+    if (!sectionCheck) throw new Not_Found("Section not found");
 
     const updated = await prisma.issues.update({
         where: {

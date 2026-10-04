@@ -29,7 +29,7 @@ export function add_remove_users_and_roles()
             });
 
             expect(res.status).toBe(404);
-            expect((await res.json())!.error).toBe("User not signed up");
+            expect(((await res.json()) as any)!.error).toBe("User not signed up");
         })
 
         it("invites the user, fails if reinvited", async () =>
@@ -51,7 +51,7 @@ export function add_remove_users_and_roles()
             });
 
             expect(res2.status).toBe(409);
-            expect((await res2.json())!.error).toBe("User already invited");
+            expect(((await res2.json()) as any)!.error).toBe("User already invited");
         })
 
 
@@ -82,7 +82,7 @@ export function add_remove_users_and_roles()
             });
 
             expect(res2.status).toBe(409);
-            expect((await res2.json())!.error).toBe("User already member");
+            expect(((await res2.json()) as any)!.error).toBe("User already member");
         })
     })
 
@@ -261,7 +261,7 @@ export function add_remove_users_and_roles()
             });
 
             expect(res.status).toBe(403);
-            expect((await res.json())!.error).toBe("No more admins left");
+            expect(((await res.json()) as any)!.error).toBe("No more admins left");
         })
 
 

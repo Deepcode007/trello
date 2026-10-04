@@ -61,6 +61,12 @@ export async function getAllIssues(req: Request, res: Response)
 
     return res.status(200).json({
         success: true,
-        data: issues.map(x=> {x.id, x.title, x.gh_url, x.section, x.board.title})
+        data: issues.map(x => ({
+            id: x.id,
+            title: x.title,
+            gh_url: x.gh_url,
+            section: x.section,
+            board: x.board.title
+        }))
     })
 }

@@ -16,7 +16,7 @@ describe("User login flow", () =>
         });
         expect(loginRes.status).toBe(201);
 
-        const body = await loginRes.json();
+        const body = (await loginRes.json()) as any;
         expect(body.success).toBe(true);
         expect(body.data.email).toBe(email);
     })
@@ -41,7 +41,7 @@ describe("User login flow", () =>
         });
 
         expect(loginRes.status).toBe(401);
-        const body = await loginRes.json();
+        const body = (await loginRes.json()) as any;
         expect(body.error).toBe("Invalid Password");
     })
 
@@ -55,7 +55,7 @@ describe("User login flow", () =>
         });
 
         expect(loginRes.status).toBe(200);
-        const body = await loginRes.json();
+        const body = (await loginRes.json()) as any;
         expect(body.data).toSatisfy(x =>
         {
             const decoded = jwt.decode(x);
@@ -74,7 +74,7 @@ describe("User login flow", () =>
         });
 
         expect(noToken.status).toBe(401);
-        const body = await noToken.json();
+        const body = (await noToken.json()) as any;
         expect(body.error).toBe("User unauthorised");
 
         const Token = await fetch(`${globalThis.TEST_BASE_URL}/api/users/me`, {
@@ -93,7 +93,7 @@ describe("User login flow", () =>
         });
 
         expect(Token.status).toBe(200);
-        const body = await Token.json();
+        const body = (await Token.json()) as any;
 
         expect(body.data.email).toBe(email);
         expect(body.data.username).toBe(`${email}+username`);

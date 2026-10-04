@@ -48,7 +48,7 @@ describe("User registration flow", () =>
         });
         expect(registerRes.status).toBe(201);
 
-        const body = await registerRes.json();
+        const body = (await registerRes.json()) as any;
         expect(body.success).toBe(true);
         expect(body.data.email).toBe(final_email);
     })
