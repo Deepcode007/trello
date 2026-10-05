@@ -1,12 +1,19 @@
 {
-  "name": "websockets",
-  "module": "index.ts",
-  "type": "module",
-  "private": true,
-  "devDependencies": {
-    "@types/bun": "latest"
-  },
-  "peerDependencies": {
-    "typescript": "^5"
-  }
+    "name": "websockets",
+    "module": "index.ts",
+    "type": "module",
+    "scripts": {
+        "dev": "bun --watch index.ts"
+    },
+    "private": true,
+    "devDependencies": {
+        "@types/bun": "latest"
+    },
+    "peerDependencies": {
+        "typescript": "^5"
+    },
+    "dependencies": {
+        "backend": "*",
+        "zod": "^4.6.5"
+    }
 }
