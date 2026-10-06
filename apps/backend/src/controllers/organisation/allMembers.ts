@@ -1,8 +1,7 @@
 import type { Request, Response } from "express";
 import { prisma } from "db/prisma";
-import zod from "zod"
-import { Not_Found, ValidationError } from "../../helpers/errorClass";
-
+import zod from "zod";
+import { Forbidden, Not_Found, ValidationError } from "../../helpers/errorClass";
 
 export async function OrgMembersHandler(req: Request, res: Response)
 {
@@ -13,6 +12,21 @@ export async function OrgMembersHandler(req: Request, res: Response)
     if (!result.success)
     {
         throw new ValidationError();
+    }
+
+    const requesterMembership = await prisma.membership.findUnique({
+        where: {
+            userId_orgId: {
+                userId: req.id,
+                orgId: result.data.orgId
+            },
+            accepted: true
+        }
+    });
+
+    if (!requesterMembership)
+    {
+        throw new Forbidden("Member access only");
     }
 
     const members = await prisma.membership.findMany({
@@ -33,15 +47,15 @@ export async function OrgMembersHandler(req: Request, res: Response)
                 }
             }
         }
-    })
+    });
 
-    if (members.length===0)
+    if (members.length === 0)
     {
         throw new Not_Found();
     }
 
-    return res.status(201).json({
+    return res.status(200).json({
         success: true,
         data: members
-    })
+    });
 }

@@ -16,12 +16,24 @@ export async function getBoardDetails(req: Request, res: Response)
             id: result.data.boardId
         },
         select: {
+            id: true,
             title: true,
+            description: true,
+            color: true,
+            isArchived: true,
             section: {
+                orderBy: {
+                    position: "asc"
+                },
                 select: {
-                    issues: true,
+                    issues: {
+                        orderBy: {
+                            position: "asc"
+                        }
+                    },
                     title: true,
-                    id: true
+                    id: true,
+                    position: true
                 }
             },
             orgId: true

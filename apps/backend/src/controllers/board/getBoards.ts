@@ -22,7 +22,11 @@ export async function getAllBoards(req: Request, res: Response)
             id: true,
             boards: {
                 select: {
+                    id: true,
                     title: true,
+                    description: true,
+                    color: true,
+                    isArchived: true,
                     _count: {
                         select: {
                             issues: true

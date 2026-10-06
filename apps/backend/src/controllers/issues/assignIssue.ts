@@ -2,6 +2,7 @@ import { prisma } from "db/prisma"
 import type { Request, Response } from "express"
 import zod from "zod"
 import { Forbidden, Not_Found, ValidationError } from "../../helpers/errorClass";
+import { wsBroadcaster } from "../../services/broadcaster";
 
 export async function assignIssue(req: Request, res: Response)
 {
@@ -12,7 +13,6 @@ export async function assignIssue(req: Request, res: Response)
     const result2 = zod.object({
         email: zod.array(zod.email()).min(1)
     }).safeParse(req.body);
-
 
     if (!result.success || !result2.success)
     {
@@ -26,6 +26,7 @@ export async function assignIssue(req: Request, res: Response)
         select: {
             board: {
                 select: {
+                    id: true,
                     org: {
                         select: {
                             id: true,
@@ -60,6 +61,7 @@ export async function assignIssue(req: Request, res: Response)
             userId: true,
             user: {
                 select: {
+                    email: true,
                     issueMappings: {
                         where: { issueId: result.data.issueId },
                         select: { userId: true }
@@ -92,6 +94,15 @@ export async function assignIssue(req: Request, res: Response)
     await prisma.issue_mapping.createMany({
         data: mapping
     })
+
+    wsBroadcaster.broadcast(issue.board.id, {
+        type: "card:member_assigned",
+        payload: {
+            issueId: result.data.issueId,
+            assignedUsers: validUsers.map(v => ({ userId: v.userId, email: v.user.email })),
+            boardId: issue.board.id
+        }
+    });
 
     return res.status(200).json({
         success: true,

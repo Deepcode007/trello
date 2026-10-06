@@ -3,7 +3,8 @@
   "module": "index.ts",
   "exports": {
     "./prisma": "./db.ts",
-    "./Role": "./generated/prisma/enums.ts"
+    "./Role": "./generated/prisma/enums.ts",
+    "./Priority": "./generated/prisma/enums.ts"
   },
   "scripts": {
     "test:setup": "bun run scripts/clearDB.ts"

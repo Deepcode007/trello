@@ -21,10 +21,14 @@ export async function getAllIssues(req: Request, res: Response)
         select: {
             title: true,
             issues: {
+                orderBy: {
+                    position: "asc"
+                },
                 select: {
                     id: true,
                     title: true,
-                    gh_url: true
+                    gh_url: true,
+                    position: true
                 }
             },
             board: {
@@ -54,6 +58,7 @@ export async function getAllIssues(req: Request, res: Response)
             id: x.id,
             title: x.title,
             gh_url: x.gh_url,
+            position: x.position,
             section: { title: section.title },
             board: section.board.title
         }))

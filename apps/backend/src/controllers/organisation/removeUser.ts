@@ -2,7 +2,7 @@ import type { Request, Response } from "express";
 import { prisma } from "db/prisma";
 import zod from "zod";
 import { Forbidden, Not_Found, ValidationError } from "../../helpers/errorClass";
-
+import { wsBroadcaster } from "../../services/broadcaster";
 
 export async function deleteUserHandler(req: Request, res: Response)
 {
@@ -50,7 +50,6 @@ export async function deleteUserHandler(req: Request, res: Response)
 
     if (!org) throw new Not_Found("Org not found");
 
-
     let admin = org.members.find(x => (x.userId == req.id && x.role == "admin"));
     let user_found = org.members.find(x => x.user.email === result2.data.email);
 
@@ -73,6 +72,26 @@ export async function deleteUserHandler(req: Request, res: Response)
             }
         }
     })
+
+    // Layer 1: Query all boards in the org and broadcast member eviction to each board topic
+    const orgBoards = await prisma.boards.findMany({
+        where: { orgId: result.data.orgId },
+        select: { id: true }
+    });
+
+    for (const b of orgBoards) {
+        wsBroadcaster.broadcast(b.id, {
+            type: "board:member_evicted",
+            payload: {
+                userId: user_found.userId,
+                orgId: result.data.orgId,
+                boardId: b.id
+            }
+        });
+    }
+
+    // Layer 2: Forcibly terminate evicted user's active WebSocket connections
+    await wsBroadcaster.evictUser(user_found.userId, result.data.orgId);
 
     return res.status(200).json({
         success: true,

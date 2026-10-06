@@ -34,6 +34,9 @@ import { renameSection } from "../controllers/sections/renameSectioon";
 import { signupHandler } from "../controllers/signupHandler";
 import { asyncHandler } from "../helpers/asyncHandler";
 import { auth } from "../middlewares/auth";
+import { getBoardEvents } from "../controllers/board/getEvents";
+import { createLabel, getLabels, attachLabel, detachLabel } from "../controllers/labels/labelsController";
+import { createChecklist, addChecklistItem, updateChecklistItem, deleteChecklist } from "../controllers/checklists/checklistsController";
 
 app.post("/api/auth/signup", asyncHandler(signupHandler));
 app.post("/api/auth/login", asyncHandler(loginHandler));
@@ -108,6 +111,7 @@ app.post("/api/boards/:boardId/sections", asyncHandler(createSection));
 
 // Rename a specific section.
 app.put("/api/sections/:sectionId", asyncHandler(renameSection));
+app.patch("/api/sections/:sectionId", asyncHandler(renameSection));
 
 // Delete a section (and handle/reassign orphaned issues). admin only
 app.delete("/api/sections/:sectionId", asyncHandler(deleteSection));
@@ -118,18 +122,33 @@ app.delete("/api/sections/:sectionId", asyncHandler(deleteSection));
 
 // List all issues within a specific section.
 app.get("/api/sections/:sectionId/issues", asyncHandler(getAllIssues));
+app.get("/api/sections/:sectionId/cards", asyncHandler(getAllIssues));
 
 // Create a new issue (title, boardId).
 app.post("/api/sections/:sectionId/issues", asyncHandler(createIssue));
+app.post("/api/sections/:sectionId/cards", asyncHandler(createIssue));
 
 // 	Get full details of a specific issue.
 app.get("/api/issues/:issueId", asyncHandler(issueDetail));
 
 // Update an issue (edit text, or move to a new sectionId).
 app.put("/api/issues/:issueId", asyncHandler(updateIssue));
+app.patch("/api/issues/:issueId", asyncHandler(updateIssue));
+app.patch("/api/cards/:issueId", asyncHandler(updateIssue));
+app.patch("/api/cards/:issueId/move", asyncHandler(updateIssue));
+app.put("/api/cards/:issueId", asyncHandler(updateIssue));
+app.get("/api/cards/:issueId", asyncHandler(issueDetail));
+
+// Card aliases with :id
+app.patch("/api/cards/:id", asyncHandler(updateIssue));
+app.patch("/api/cards/:id/move", asyncHandler(updateIssue));
+app.put("/api/cards/:id", asyncHandler(updateIssue));
+app.get("/api/cards/:id", asyncHandler(issueDetail));
+app.delete("/api/cards/:id", asyncHandler(deleteIssue));
 
 // Delete an issue.
 app.delete("/api/issues/:issueId", asyncHandler(deleteIssue));
+app.delete("/api/cards/:issueId", asyncHandler(deleteIssue));
 
 
 // Issue Assignments & Comments
@@ -153,5 +172,22 @@ app.put("/api/comments/:commentId", asyncHandler(editComment));
 
 // Delete a comment.
 app.delete("/api/comments/:commentId", asyncHandler(deleteComment));
+
+// Board Events & Catch-up Sync
+app.get("/api/boards/:boardId/events", asyncHandler(getBoardEvents));
+app.get("/api/boards/:id/events", asyncHandler(getBoardEvents));
+
+// Labels
+app.post("/api/boards/:boardId/labels", asyncHandler(createLabel));
+app.get("/api/boards/:boardId/labels", asyncHandler(getLabels));
+app.post("/api/issues/:issueId/labels", asyncHandler(attachLabel));
+app.delete("/api/issues/:issueId/labels/:labelId", asyncHandler(detachLabel));
+
+// Checklists & Subtasks
+app.post("/api/issues/:issueId/checklists", asyncHandler(createChecklist));
+app.post("/api/checklists/:checklistId/items", asyncHandler(addChecklistItem));
+app.patch("/api/checklists/items/:itemId", asyncHandler(updateChecklistItem));
+app.delete("/api/checklists/:checklistId", asyncHandler(deleteChecklist));
+
 
 

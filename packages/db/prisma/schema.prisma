@@ -1,8 +1,6 @@
 // This is your Prisma schema file,
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
-// Get a free hosted Postgres database in seconds: `npx create-db`
-
 generator client {
     provider = "prisma-client"
     output   = "../generated/prisma"
@@ -18,22 +16,38 @@ enum Role {
     contributor
 }
 
+enum Priority {
+    low
+    medium
+    high
+    urgent
+}
+
 model user {
-    id            String          @id @default(uuid())
-    email         String          @unique
-    username      String
-    password      String
-    memberships   membership[]
-    issueMappings issue_mapping[]
-    comments      comments[]
+    id              String  @id @default(uuid())
+    email           String  @unique
+    username        String
+    password        String
+    name            String?
+    avatarUrl       String?
+
+    createdAt       DateTime @default(now())
+    updatedAt       DateTime @default(now()) @updatedAt
+
+    memberships     membership[]
+    issueMappings   issue_mapping[]
+    comments        comments[]
 }
 
 model orgs {
     id          String  @id @default(uuid())
     name        String
     description String
-    visible     Boolean     @default(true)
-    
+    visible     Boolean @default(true)
+
+    createdAt   DateTime @default(now())
+    updatedAt   DateTime @default(now()) @updatedAt
+
     members     membership[]
     boards      boards[]
 }
@@ -44,66 +58,190 @@ model membership {
     accepted    Boolean @default(false)
 
     userId      String
-    user        user    @relation(fields: [userId], references: [id], onDelete: Cascade)
+    user        user   @relation(fields: [userId], references: [id], onDelete: Cascade)
     orgId       String
-    org         orgs    @relation(fields: [orgId], references: [id], onDelete: Cascade)
+    org         orgs   @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+    createdAt   DateTime  @default(now())
+    updatedAt   DateTime  @default(now()) @updatedAt
+    acceptedAt  DateTime?
+
     @@unique([userId, orgId])
     @@index([orgId])
 }
 
 model boards {
-    id      String       @id @default(uuid())
-    title   String
+    id          String  @id @default(uuid())
+    title       String
+    description String?
+    color       String?
+    isArchived  Boolean @default(false)
 
-    orgId   String
-    org     orgs       @relation(fields: [orgId], references: [id], onDelete: Cascade)
-    issues  issues[]
-    section sections[]
+    orgId       String
+    org         orgs   @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+    createdAt   DateTime @default(now())
+    updatedAt   DateTime @default(now()) @updatedAt
+
+    issues      issues[]
+    section     sections[]
+    labels      labels[]
+    events      board_events[]
+
+    @@index([orgId])
 }
 
 model sections {
-    id      String      @id @default(uuid())
-    title   String
-    boardId String
-    board   boards      @relation(fields: [boardId], references: [id], onDelete: Cascade)
-    issues  issues[]
+    id          String  @id @default(uuid())
+    title       String
+    position    Float   @default(0)
+    wipLimit    Int?
+    isArchived  Boolean @default(false)
+
+    boardId     String
+    board       boards @relation(fields: [boardId], references: [id], onDelete: Cascade)
+
+    createdAt   DateTime @default(now())
+    updatedAt   DateTime @default(now()) @updatedAt
+
+    issues      issues[]
+
+    @@index([boardId, position])
 }
 
 model issues {
-    id            String          @id @default(uuid())
-    title         String
-    gh_url        String?
-    boardId       String
-    board         boards          @relation(fields: [boardId], references: [id], onDelete: Cascade)
-    sectionId     String?
-    section       sections?       @relation(fields: [sectionId], references: [id], onDelete: SetNull)
-    issueMappings issue_mapping[]
-    comments      comments[]
+    id              String    @id @default(uuid())
+    title           String
+    description     String?
+    position        Float     @default(0)
+    priority        Priority  @default(medium)
+    dueDate         DateTime?
+    startDate       DateTime?
+    isArchived      Boolean   @default(false)
+    gh_url          String?
+
+    boardId         String
+    board           boards   @relation(fields: [boardId], references: [id], onDelete: Cascade)
+    sectionId       String
+    section         sections @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+
+    createdAt       DateTime @default(now())
+    updatedAt       DateTime @default(now()) @updatedAt
+
+    issueMappings   issue_mapping[]
+    comments        comments[]
+    checklists      checklists[]
+    labels          issue_labels[]
 
     @@index([boardId, sectionId])
-    @@index([sectionId])
+    @@index([sectionId, position])
 }
 
 model issue_mapping {
-    id      String @id @default(uuid())
-    userId  String
-    user    user   @relation(fields: [userId], references: [id], onDelete: Cascade)
-    issueId String
-    issue   issues @relation(fields: [issueId], references: [id], onDelete: Cascade)
+    id          String @id @default(uuid())
+    userId      String
+    user        user   @relation(fields: [userId], references: [id], onDelete: Cascade)
+    issueId     String
+    issue       issues @relation(fields: [issueId], references: [id], onDelete: Cascade)
+
+    createdAt   DateTime @default(now())
+
     @@unique([userId, issueId])
+    @@index([issueId])
 }
 
 model comments {
-    id          String      @id @default(uuid())
+    id          String     @id @default(uuid())
     description String
     issueId     String
-    issue       issues      @relation(fields: [issueId], references: [id])
+    issue       issues     @relation(fields: [issueId], references: [id], onDelete: Cascade)
     userId      String
-    user        user        @relation(fields: [userId], references: [id])
+    user        user       @relation(fields: [userId], references: [id], onDelete: Cascade)
     parentId    String?
-    parent      comments?   @relation("CommentReplies", fields: [parentId], references: [id])
-    children    comments[]  @relation("CommentReplies")
+    parent      comments?  @relation("CommentReplies", fields: [parentId], references: [id], onDelete: SetNull)
+    children    comments[] @relation("CommentReplies")
 
-    createdAt   DateTime    @default(now())
+    createdAt   DateTime  @default(now())
+    updatedAt   DateTime  @default(now()) @updatedAt
     deletedAt   DateTime?
+
+    @@index([issueId, createdAt(sort: Desc)])
+    @@index([parentId])
+    @@index([userId])
+}
+
+model checklists {
+    id          String @id @default(uuid())
+    title       String
+    position    Float  @default(0)
+    issueId     String
+    issue       issues @relation(fields: [issueId], references: [id], onDelete: Cascade)
+
+    createdAt   DateTime @default(now())
+    updatedAt   DateTime @default(now()) @updatedAt
+
+    items       checklist_items[]
+
+    @@index([issueId, position])
+}
+
+model checklist_items {
+    id          String    @id @default(uuid())
+    content     String
+    isCompleted Boolean   @default(false)
+    position    Float     @default(0)
+    dueDate     DateTime?
+
+    checklistId String
+    checklist   checklists @relation(fields: [checklistId], references: [id], onDelete: Cascade)
+
+    createdAt   DateTime @default(now())
+    updatedAt   DateTime @default(now()) @updatedAt
+
+    @@index([checklistId, position])
+}
+
+model labels {
+    id          String @id @default(uuid())
+    name        String
+    color       String
+    boardId     String
+    board       boards @relation(fields: [boardId], references: [id], onDelete: Cascade)
+
+    createdAt   DateTime @default(now())
+    updatedAt   DateTime @default(now()) @updatedAt
+
+    issueLabels issue_labels[]
+
+    @@index([boardId])
+}
+
+model issue_labels {
+    id      String @id @default(uuid())
+    issueId String
+    issue   issues @relation(fields: [issueId], references: [id], onDelete: Cascade)
+    labelId String
+    label   labels @relation(fields: [labelId], references: [id], onDelete: Cascade)
+
+    createdAt DateTime @default(now())
+
+    @@unique([issueId, labelId])
+    @@index([labelId])
+}
+
+model board_events {
+    id          String    @id @default(uuid())
+    boardId     String
+    board       boards    @relation(fields: [boardId], references: [id], onDelete: Cascade)
+    sequence    BigInt
+    eventType   String
+    payload     Json
+    published   Boolean   @default(false)
+    publishedAt DateTime?
+
+    createdAt   DateTime @default(now())
+
+    @@unique([boardId, sequence])
+    @@index([boardId, published])
+    @@index([createdAt])
 }

@@ -7,6 +7,9 @@ export async function getCurrentOrgs(req: Request, res: Response)
     let orgs = await prisma.membership.findMany({
         where: {
             userId: req.id
+        },
+        include: {
+            org: true
         }
     })
 

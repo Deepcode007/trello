@@ -20,9 +20,13 @@ export async function getAllSections(req: Request, res: Response)
         },
         select: {
             section: {
+                orderBy: {
+                    position: "asc"
+                },
                 select: {
                     id: true,
-                    title: true
+                    title: true,
+                    position: true
                 }
             },
             org: {
@@ -43,6 +47,6 @@ export async function getAllSections(req: Request, res: Response)
 
     return res.status(200).json({
         success: true,
-        data: board.section.map(x => ({ id: x.id, title: x.title }))
+        data: board.section.map(x => ({ id: x.id, title: x.title, position: x.position }))
     })
 }

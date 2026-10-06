@@ -1,24 +1,24 @@
 # 📋 Kanban Board (Trello Clone Monorepo)
 
-A high-performance, real-time Kanban project management system built with **Bun**, **Turborepo**, **TypeScript**, **Express**, **Prisma**, and **PostgreSQL**.
+A high-performance, real-time Kanban project management system built with **Bun**, **Turborepo**, **TypeScript**, **Express 5**, **Prisma ORM**, and **PostgreSQL**.
 
-Designed for agile teams and organizations, this platform provides hierarchical workspace management, dynamic Kanban boards, customizable workflow columns, issue tracking with GitHub integration, nested threaded discussions, and real-time collaboration.
+Designed for agile teams and organizations, this platform provides hierarchical workspace management, dynamic Kanban boards, customizable workflow columns, issue tracking with GitHub integration, nested threaded discussions, and a dedicated native **WebSocket engine** for real-time collaboration and presence tracking.
 
 ---
 
 ## 🚀 Tech Stack
 
-| Domain                        | Technologies                                                                                               |
-| :---------------------------- | :--------------------------------------------------------------------------------------------------------- |
-| **Runtime & Package Manager** | [Bun](https://bun.com/) (v1.3+)                                                                            |
-| **Monorepo Engine**           | [Turborepo](https://turbo.build/repo) (v2)                                                                 |
-| **Language**                  | [TypeScript](https://www.typescriptlang.org/) (Strict typing across all workspaces)                        |
-| **Backend Framework**         | [Express 5](https://expressjs.com/) on Bun runtime                                                         |
-| **Database & ORM**            | [PostgreSQL](https://www.postgresql.org/) with [Prisma ORM](https://www.prisma.io/) (`@prisma/adapter-pg`) |
-| **Authentication & Security** | JWT (`jsonwebtoken`), `bcrypt` password hashing, Role-Based Access Control (RBAC)                          |
-| **Validation**                | [Zod](https://zod.dev/) schema validation for requests and environment configurations                      |
-| **Real-Time**                 | WebSockets (native Bun WebSocket server)                                                                   |
-| **Testing**                   | Bun Test runner (`bun:test`), Supertest, custom integration test suites                                    |
+| Domain                        | Technologies                                                                                                |
+| :---------------------------- | :---------------------------------------------------------------------------------------------------------- |
+| **Runtime & Package Manager** | [Bun](https://bun.com/) (v1.3+ / v1.4+)                                                                     |
+| **Monorepo Engine**           | [Turborepo](https://turbo.build/repo) (v2)                                                                  |
+| **Language**                  | [TypeScript](https://www.typescriptlang.org/) (Strict typing across all workspaces)                         |
+| **Backend Framework**         | [Express 5](https://expressjs.com/) on Bun runtime                                                          |
+| **Real-Time Engine**          | Native [Bun WebSockets](https://bun.com/docs/api/websockets) (Pub/Sub topics, room subscriptions, presence) |
+| **Database & ORM**            | [PostgreSQL](https://www.postgresql.org/) with [Prisma ORM](https://www.prisma.io/) (`@prisma/adapter-pg`)  |
+| **Authentication & Security** | JWT (`jsonwebtoken`), `bcrypt` password hashing, Role-Based Access Control (RBAC)                           |
+| **Validation**                | [Zod](https://zod.dev/) schema validation for requests and environment configurations                       |
+| **Testing**                   | Bun Test runner (`bun:test`), Supertest, custom integration & unit test suites                              |
 
 ---
 
@@ -34,23 +34,32 @@ Designed for agile teams and organizations, this platform provides hierarchical 
 
 - **Dynamic Boards**: Create and organize multiple boards per organization.
 - **Customizable Sections (Columns)**: Build flexible workflow pipelines (e.g., _Backlog_, _In Progress_, _In Review_, _Done_).
-- **Column Lifecycle**: Reorder, rename, or safely delete sections with intelligent issue reassignment.
+- **Column Lifecycle & Reordering**: Reorder, rename (`PUT` / `PATCH`), or safely delete sections. Column positions (`position`) are persisted to the database and indexed. Deleting a non-empty section requires specifying a `targetSectionId` on the same board to reassign issues; if a section is the only one remaining on the board and contains issues, deletion is blocked until issues are manually handled.
 
 ### 📝 Issue / Card Management
 
 - **Rich Task Cards**: Create issues with descriptions, metadata, and optional GitHub links (`gh_url`).
-- **Flexible Movement**: Move cards seamlessly across sections within the board.
+- **Flexible Movement**: Move cards seamlessly across sections or reorder positions within a section (`PATCH /api/cards/:id/move`).
+- **RESTful Card Aliases**: Full support for `/api/cards/*` routes alongside `/api/issues/*`.
 - **Team Assignments**: Assign and unassign single or multiple team members to any card (`issue_mapping`).
 
-### 💬 Threaded Discussion & Comments
+### ⚡ Real-Time Collaboration & Presence (WebSockets)
+
+- **Native Pub/Sub Engine**: Board-scoped rooms (`board_<boardId>`) using Bun's native high-performance WebSocket publish/subscribe.
+- **Live Event Broadcasting**: Instant updates for card moves, creation, edits, deletions, and column changes.
+- **Presence Tracking**: Real-time `user:joined` and `user:left` events with automatic connection-drop cleanup.
+- **Flexible Authentication**: Handshake-level JWT validation supporting headers, cookies, URL query parameters, and subprotocols.
+- **Dual-Server & IPC Architecture**: Supports running in unified single-process mode or separated microservices with HTTP broadcast bridging (`/internal/broadcast`).
+
+### 💬 Threaded Discussions & Comments
 
 - **Hierarchical Comment Tree**: Infinite-depth nested replies powered by an optimized recursive tree algorithm (`commentTree`).
 - **Audit & Editing Policies**: 24-hour edit window enforcement and soft-deletion support.
 
-### ⚡ Real-Time Synchronization & Performance
+### 🗄️ Database Optimization
 
-- **WebSocket Engine**: Real-time event broadcasting for instant board updates across active collaborators.
-- **Optimized Database Indexing**: Composite indexes on `[boardId, sectionId]`, `[userId, orgId]`, and foreign key cascades.
+- **Composite Indexing**: Optimized indexes on `[boardId, sectionId]`, `[userId, orgId]`, and foreign key cascades.
+- **Prisma Client Generation**: Tailored output with PostgreSQL native pooling adapter.
 
 ---
 
@@ -59,30 +68,40 @@ Designed for agile teams and organizations, this platform provides hierarchical 
 ```text
 trello/
 ├── apps/
-│   ├── backend/         # Express 5 REST API server running on Bun
+│   ├── backend/               # Express 5 REST API server running on Bun
 │   │   ├── src/
-│   │   │   ├── controllers/  # Auth, Org, Board, Section, Issue, & Comment handlers
-│   │   │   ├── helpers/      # Comment tree builder, async wrappers, custom error classes
-│   │   │   ├── middlewares/  # JWT authentication & token generation
-│   │   │   ├── models/       # Zod schemas for input validation
-│   │   │   ├── routes/       # Express route definitions
-│   │   │   └── types/        # TypeScript environment and entity typings
-│   │   └── tests/            # Bun integration & unit test suite
-│   ├── websockets/      # Real-time WebSocket server for collaborative sync
-│   └── frontend/        # Kanban web application interface
+│   │   │   ├── controllers/   # Auth, Org, Board, Section, Issue, & Comment handlers
+│   │   │   ├── helpers/       # Comment tree builder, async wrappers, custom error classes, JWT helpers
+│   │   │   ├── middlewares/   # JWT authentication & token generation
+│   │   │   ├── models/        # Zod schemas for input validation
+│   │   │   ├── routes/        # Express route definitions (with card & section aliases)
+│   │   │   ├── services/      # WebSocketBroadcaster client service
+│   │   │   └── types/         # TypeScript environment and entity typings
+│   │   └── tests/             # Integration & unit test suites (40+ unit tests)
+│   │
+│   ├── websockets/            # Native Bun WebSocket collaborative server
+│   │   ├── src/
+│   │   │   ├── auth/          # Handshake authentication & token extraction strategies
+│   │   │   ├── server/        # Bun.serve WebSocket server, upgrade handlers, & close hooks
+│   │   │   ├── services/      # Broadcaster singleton & IPC handler
+│   │   │   └── types/         # Client actions, server events, & payload interfaces
+│   │   ├── tests/             # WebSocket test suites (65 tests across auth, pub/sub, upgrade)
+│   │   └── index.ts           # WebSocket entrypoint & dual-server runner
+│   │
+│   └── frontend/              # Kanban web application interface (in progress)
 │
 ├── packages/
-│   ├── db/              # Prisma schema, migrations, and PostgreSQL client
-│   │   ├── prisma/      # schema.prisma and migration logs
-│   │   ├── scripts/     # Database utilities (e.g., clearDB.ts for test runs)
-│   │   └── db.ts        # Prisma client instance with PostgreSQL adapter
-│   ├── ui/              # Shared React component library
-│   ├── eslint-config/   # Monorepo-wide ESLint configurations
-│   └── typescript-config/ # Base and framework-specific tsconfig definitions
+│   ├── db/                    # Prisma schema, migrations, and PostgreSQL client
+│   │   ├── prisma/            # schema.prisma and migration logs
+│   │   ├── scripts/           # Database utilities (clearDB.ts for test runs)
+│   │   └── db.ts              # Prisma client instance with PostgreSQL adapter
+│   ├── ui/                    # Shared React component library
+│   ├── eslint-config/         # Monorepo-wide ESLint configurations
+│   └── typescript-config/     # Base and framework-specific tsconfig definitions
 │
-├── package.json         # Workspace root configuration
-├── turbo.json           # Turborepo task pipeline definition
-└── bun.lock             # Bun lockfile
+├── package.json               # Workspace root configuration
+├── turbo.json                 # Turborepo task pipeline definition
+└── bun.lock                   # Bun lockfile
 ```
 
 ---
@@ -139,6 +158,7 @@ erDiagram
     sections {
         string id PK
         string title
+        float position
         string boardId FK
     }
 
@@ -169,7 +189,69 @@ erDiagram
 
 ---
 
-## 📡 API Overview
+## 🌐 Real-Time WebSocket Protocol
+
+The WebSocket server provides real-time event distribution and presence tracking across board collaborators.
+
+### Connecting to WebSockets
+
+- **Default URL**: `ws://localhost:3001`
+- **Authentication**: JWT token must be provided through any of the following strategies:
+  1. **Query Parameter**: `ws://localhost:3001?token=<JWT>` or `?access_token=<JWT>`
+  2. **Authorization Header**: `Authorization: Bearer <JWT>`
+  3. **Cookie**: `Cookie: token=<JWT>` or `auth_token=<JWT>`
+  4. **Subprotocol**: `Sec-WebSocket-Protocol: bearer, <JWT>`
+
+Unauthenticated connections are rejected at the HTTP handshake stage with **HTTP 401 Unauthorized**.
+
+### Client-to-Server Actions
+
+Send JSON frames over the WebSocket connection:
+
+```jsonc
+// 1. Join / Subscribe to a board room
+{
+  "action": "join", // or "subscribe"
+  "boardId": "board-uuid"
+}
+
+// 2. Leave / Unsubscribe from a board room
+{
+  "action": "leave", // or "unsubscribe"
+  "boardId": "board-uuid"
+}
+
+// 3. Heartbeat Ping
+{
+  "action": "ping"
+}
+```
+
+### Server-to-Client Broadcast Events
+
+When actions occur via REST API or other clients, events are published to the board room topic (`board_<boardId>`):
+
+| Event Type       | Payload Fields                               | Description                              |
+| :--------------- | :------------------------------------------- | :--------------------------------------- |
+| `user:joined`    | `{ userId, name, email, boardId }`           | Collaborator entered the board           |
+| `user:left`      | `{ userId, name, email, boardId }`           | Collaborator left or disconnected        |
+| `card:created`   | `{ cardData: Issue }`                        | New card added to a column               |
+| `card:updated`   | `{ cardId, updates: { title?, gh_url? } }`   | Card metadata or title modified          |
+| `card:moved`     | `{ cardId, sourceList, destList, position }` | Card dragged across columns or reordered |
+| `card:deleted`   | `{ cardId }`                                 | Card removed from the board              |
+| `list:created`   | `{ listData: Section }`                      | New column added to the board            |
+| `list:updated`   | `{ listId, title }`                          | Column renamed                           |
+| `list:reordered` | `{ listId, newPosition }`                    | Column reordered                         |
+| `list:deleted`   | `{ listId }`                                 | Column deleted                           |
+
+### HTTP Endpoints on WebSocket Server
+
+- `GET /health` or `GET /api/health`: Health status and port inspection.
+- `POST /internal/broadcast`: Inter-process broadcast hook used by Express when running in multi-process mode. Authenticated via `x-internal-secret: <jwt_key>`.
+
+---
+
+## 📡 REST API Reference
 
 All protected routes require a Bearer token in the `Authorization` header:
 `Authorization: Bearer <jwt_token>`
@@ -191,11 +273,11 @@ All protected routes require a Bearer token in the `Authorization` header:
 | `GET`    | `/api/orgs/:orgId`         | Get details of a specific organization  | Member         |
 | `PUT`    | `/api/orgs/:orgId`         | Update organization details             | Org Admin      |
 | `DELETE` | `/api/orgs/:orgId`         | Delete organization                     | Org Admin      |
-| `GET`    | `/api/orgs/:orgId/members` | List members and their roles            | Member         |
-| `POST`   | `/api/orgs/:orgId/members` | Invite a user to an organization        | Org Admin      |
-| `PUT`    | `/api/orgs/:orgId/accept`  | Accept an organization invitation       | Invitee        |
-| `PUT`    | `/api/orgs/:orgId/members` | Update a member's role                  | Org Admin      |
-| `DELETE` | `/api/orgs/:orgId/members` | Remove user or leave organization       | Member / Admin |
+| `GET`    | `/api/orgs/:orgId/members` | List members and their roles (Member only, 200 OK)             | Member         |
+| `POST`   | `/api/orgs/:orgId/members` | Invite a user to an organization                               | Org Admin      |
+| `PUT`    | `/api/orgs/:orgId/accept`  | Accept an organization invitation                              | Invitee        |
+| `PUT`    | `/api/orgs/:orgId/members` | Update a member's role                                         | Org Admin      |
+| `DELETE` | `/api/orgs/:orgId/members` | Remove user or leave organization                              | Member / Admin |
 
 ### 📋 Boards
 
@@ -209,30 +291,31 @@ All protected routes require a Bearer token in the `Authorization` header:
 
 ### 📑 Sections (Columns)
 
-| Method   | Endpoint                        | Description                                | Access    |
-| :------- | :------------------------------ | :----------------------------------------- | :-------- |
-| `GET`    | `/api/boards/:boardId/sections` | List sections for a board                  | Member    |
-| `POST`   | `/api/boards/:boardId/sections` | Create a new section column                | Member    |
-| `PUT`    | `/api/sections/:sectionId`      | Rename a section                           | Member    |
-| `DELETE` | `/api/sections/:sectionId`      | Delete section (reassigns orphaned issues) | Org Admin |
+| Method          | Endpoint                        | Description                                                                                     | Access    |
+| :-------------- | :------------------------------ | :---------------------------------------------------------------------------------------------- | :-------- |
+| `GET`           | `/api/boards/:boardId/sections` | List sections for a board (sorted by `position`)                                                | Member    |
+| `POST`          | `/api/boards/:boardId/sections` | Create a new section column (`list:created`, optional `position`)                               | Member    |
+| `PUT` / `PATCH` | `/api/sections/:sectionId`      | Rename (`title`) or reorder (`position` / `newPosition`) with DB persistence (`list:updated` / `list:reordered`) | Member    |
+| `DELETE`        | `/api/sections/:sectionId`      | Delete section; requires `targetSectionId` if section has issues (`list:deleted`)                | Org Admin |
 
 ### 📌 Issues (Cards) & Assignments
 
-| Method   | Endpoint                          | Description                                   | Access |
-| :------- | :-------------------------------- | :-------------------------------------------- | :----- |
-| `GET`    | `/api/sections/:sectionId/issues` | List issues in a section                      | Member |
-| `POST`   | `/api/sections/:sectionId/issues` | Create an issue (card)                        | Member |
-| `GET`    | `/api/issues/:issueId`            | Get full issue detail                         | Member |
-| `PUT`    | `/api/issues/:issueId`            | Update issue title or move to another section | Member |
-| `DELETE` | `/api/issues/:issueId`            | Delete an issue                               | Member |
-| `POST`   | `/api/issues/:issueId/assignees`  | Assign users to an issue                      | Member |
-| `DELETE` | `/api/issues/:issueId/assignees`  | Remove user assignment                        | Member |
+| Method          | Endpoint                                                              | Description                                                                     | Access |
+| :-------------- | :-------------------------------------------------------------------- | :------------------------------------------------------------------------------ | :----- |
+| `GET`           | `/api/sections/:sectionId/issues`<br>`/api/sections/:sectionId/cards` | List cards in a section                                                         | Member |
+| `POST`          | `/api/sections/:sectionId/issues`<br>`/api/sections/:sectionId/cards` | Create a card; verifies section belongs to the board (`card:created`)            | Member |
+| `GET`           | `/api/issues/:issueId`<br>`/api/cards/:issueId` / `:id`               | Get full card details                                                           | Member |
+| `PUT` / `PATCH` | `/api/issues/:issueId`<br>`/api/cards/:issueId` / `:id`               | Update card title, GitHub URL, or section                        | Member |
+| `PATCH`         | `/api/cards/:issueId/move`<br>`/api/cards/:id/move`                   | Explicitly move card across sections or positions (`card:moved`) | Member |
+| `DELETE`        | `/api/issues/:issueId`<br>`/api/cards/:issueId` / `:id`               | Delete card (`card:deleted`)                                     | Member |
+| `POST`          | `/api/issues/:issueId/assignees`                                      | Assign users to card                                             | Member |
+| `DELETE`        | `/api/issues/:issueId/assignees`                                      | Remove user assignment                                           | Member |
 
 ### 💬 Threaded Comments
 
 | Method   | Endpoint                        | Description                                | Access         |
 | :------- | :------------------------------ | :----------------------------------------- | :------------- |
-| `GET`    | `/api/issues/:issueId/comments` | Get full nested comment tree for an issue  | Member         |
+| `GET`    | `/api/issues/:issueId/comments` | Get nested comment tree for an issue       | Member         |
 | `POST`   | `/api/issues/:issueId/comments` | Post a comment or reply to an existing one | Member         |
 | `PUT`    | `/api/comments/:commentId`      | Edit a comment (within 24-hour limit)      | Author         |
 | `DELETE` | `/api/comments/:commentId`      | Delete a comment                           | Author / Admin |
@@ -257,7 +340,7 @@ bun install
 
 ### 2. Configure Environment Variables
 
-Create `.env` files in `packages/db` and `apps/backend`:
+Create `.env` configuration files:
 
 **`packages/db/.env`**:
 
@@ -270,52 +353,81 @@ DATABASE_URL="postgresql://<user>:<password>@localhost:5432/<database_name>"
 ```env
 port="3000"
 jwt_key="your-super-secret-jwt-key"
+ws_port="3001"
 ```
+
+**`apps/websockets/.env`**:
+
+```env
+ws_port="3001"
+jwt_key="your-super-secret-jwt-key"
+```
+
+> [!IMPORTANT]
+> The `jwt_key` in `apps/backend/.env` and `apps/websockets/.env` must match so that tokens generated by the REST API can be validated by the WebSocket server and inter-process broadcast calls can be authenticated.
 
 ### 3. Setup the Database
 
 Generate Prisma Client and apply migrations:
 
 ```bash
-# From packages/db
-bunx prisma migrate dev
-bunx prisma generate
+# Apply migrations and generate Prisma client
+bun --filter db exec prisma migrate dev
+bun --filter db exec prisma generate
 ```
 
-### 4. Run the Development Servers
+### 4. Run Development Servers
 
-Start all applications and packages concurrently with Turborepo:
+#### Option A: Run All Services via Turborepo (Recommended)
 
 ```bash
-bun turbo run dev
+bun run dev
 ```
 
-Or run individual services with filters:
+#### Option B: Run Specific Services Separately
 
 ```bash
-# Start backend API only
+# Start backend API (Port 3000)
 bun run dev --filter=backend
 
-# Start WebSocket server only
+# Start WebSocket server (Port 3001)
 bun run dev --filter=websockets
+```
+
+#### Option C: Dual-Server Single-Process Mode
+
+Run both Express API and native WebSockets within the same Bun process for shared in-memory broadcasting:
+
+```bash
+cd apps/websockets
+START_EXPRESS=true bun run index.ts
 ```
 
 ---
 
 ## 🧪 Testing
 
-The backend includes a comprehensive suite of unit tests and end-to-end integration tests using Bun's native test runner:
+The repository features comprehensive automated testing using Bun's native test runner (`bun:test`):
 
 ```bash
-# Run all tests across the monorepo
-bun turbo run test
+# 1. Run all tests across the monorepo
+bun run test
 
-# Run backend tests directly
+# 2. Run WebSocket unit and integration tests (65 tests)
+bun test --cwd apps/websockets
+
+# 3. Run Backend unit tests (helpers, middleware, Zod schemas, & broadcast dispatches)
+bun test apps/backend/tests/unit
+
+# 4. Run Full Backend integration tests (requires PostgreSQL test database)
 bun test --cwd apps/backend
+
+# 5. Type check all monorepo packages
+bun run check-types
 ```
 
 > [!NOTE]
-> Integration tests automatically execute `packages/db/scripts/clearDB.ts` before runs to ensure a clean state in the test database (`trello_test`).
+> Database integration tests depend on `packages/db/scripts/clearDB.ts` (configured in `turbo.json`) to automatically truncate tables before runs in the test database (`trello_test`).
 
 ---
 
@@ -326,11 +438,16 @@ bun test --cwd apps/backend
 - [x] Authentication & Role-Based Access Control (RBAC)
 - [x] Multi-tenant organization & membership management
 - [x] Board and workflow section (column) management
-- [x] Issue lifecycle and cross-column card moves
-- [x] Multi-user card assignments
+- [x] Issue lifecycle, movement across columns, and position reordering
+- [x] RESTful Card and Section aliases (`/api/cards/*`, `PATCH /move`)
+- [x] Multi-user card assignments (`issue_mapping`)
 - [x] Threaded nested comment tree with edit time limits
-- [x] Comprehensive integration and unit test suite
-- [ ] WebSocket broadcast events for live card drags and updates
+- [x] Native WebSocket server with board pub/sub rooms
+- [x] Multi-strategy handshake authentication (Headers, Cookies, Query, Subprotocol)
+- [x] Real-time presence tracking (`user:joined`, `user:left`)
+- [x] Automatic WebSocket disconnect cleanup
+- [x] Inter-process event synchronization (`WebSocketBroadcaster` with HTTP bridge)
+- [x] Comprehensive test suites (65 WebSocket tests + 40 Backend unit tests)
 - [ ] Next.js / React frontend UI with drag-and-drop Kanban board (`dnd-kit`)
 - [ ] GitHub webhook integration for automated card syncing
 - [ ] Card activity log and audit history

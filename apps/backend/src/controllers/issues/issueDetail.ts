@@ -5,9 +5,10 @@ import { Forbidden, Not_Found, ValidationError } from "../../helpers/errorClass"
 
 export async function issueDetail(req: Request, res: Response)
 {
+    const issueIdParam = req.params.issueId ?? req.params.cardId ?? req.params.id;
     const result = zod.object({
         issueId: zod.uuid()
-    }).safeParse(req.params);
+    }).safeParse({ issueId: issueIdParam });
 
     if (!result.success)
     {
@@ -21,7 +22,15 @@ export async function issueDetail(req: Request, res: Response)
         select: {
             id: true,
             title: true,
+            description: true,
+            position: true,
+            priority: true,
+            dueDate: true,
+            startDate: true,
+            isArchived: true,
             gh_url: true,
+            createdAt: true,
+            updatedAt: true,
             board: {
                 select: {
                     title: true,
@@ -48,8 +57,40 @@ export async function issueDetail(req: Request, res: Response)
                 select: {
                     user: {
                         select: {
+                            id: true,
                             email: true,
-                            username: true
+                            username: true,
+                            name: true,
+                            avatarUrl: true
+                        }
+                    }
+                }
+            },
+            checklists: {
+                orderBy: { position: "asc" },
+                select: {
+                    id: true,
+                    title: true,
+                    position: true,
+                    items: {
+                        orderBy: { position: "asc" },
+                        select: {
+                            id: true,
+                            content: true,
+                            isCompleted: true,
+                            position: true,
+                            dueDate: true
+                        }
+                    }
+                }
+            },
+            labels: {
+                select: {
+                    label: {
+                        select: {
+                            id: true,
+                            name: true,
+                            color: true
                         }
                     }
                 }

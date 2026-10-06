@@ -76,13 +76,16 @@ export function get_comments_test()
         expect(res.status).toBe(400);
     });
 
-    it("Fails with 404 when issue has no comments", async () =>
+    it("Returns 200 with empty array when issue has no comments", async () =>
     {
         const res = await fetch(`${globalThis.TEST_BASE_URL}/api/issues/${emptyIssueId}/comments`, {
             method: "GET",
             headers: { "Content-Type": "application/json", authorization: `Bearer ${adminToken}` }
         });
-        expect(res.status).toBe(404);
+        expect(res.status).toBe(200);
+        const body = await res.json() as { success: boolean; data: any[] };
+        expect(body.success).toBe(true);
+        expect(body.data).toEqual([]);
     });
 
     it("Fails with 403 when non-member requests comments", async () =>

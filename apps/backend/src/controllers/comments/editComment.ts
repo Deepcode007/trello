@@ -2,7 +2,7 @@ import { prisma } from "db/prisma"
 import type { Request, Response } from "express"
 import zod from "zod"
 import { Forbidden, Not_Found, ValidationError } from "../../helpers/errorClass";
-
+import { wsBroadcaster } from "../../services/broadcaster";
 
 export async function editComment(req: Request, res: Response)
 {
@@ -11,7 +11,7 @@ export async function editComment(req: Request, res: Response)
     }).safeParse(req.params);
 
     const result2 = zod.object({
-        description: zod.string().trim()
+        description: zod.string().trim().min(1)
     }).safeParse(req.body);
 
     if (!result.success || !result2.success)
@@ -31,6 +31,7 @@ export async function editComment(req: Request, res: Response)
                 select: {
                     board: {
                         select: {
+                            id: true,
                             org: {
                                 select: {
                                     members: {
@@ -63,6 +64,11 @@ export async function editComment(req: Request, res: Response)
         },
         data: result2.data
     })
+
+    wsBroadcaster.broadcast(comment.issue.board.id, {
+        type: "comment:updated",
+        payload: { comment: updated, commentId: updated.id, boardId: comment.issue.board.id }
+    });
 
     return res.status(201).json({
         success: true,

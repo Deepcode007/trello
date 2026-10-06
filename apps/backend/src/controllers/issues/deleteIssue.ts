@@ -2,12 +2,14 @@ import { prisma } from "db/prisma"
 import type { Request, Response } from "express"
 import zod from "zod"
 import { Forbidden, Not_Found, ValidationError } from "../../helpers/errorClass";
+import { wsBroadcaster } from "../../services/broadcaster";
 
 export async function deleteIssue(req: Request, res: Response)
 {
+    const issueIdParam = req.params.issueId ?? req.params.cardId ?? req.params.id;
     const result = zod.object({
         issueId: zod.uuid()
-    }).safeParse(req.params);
+    }).safeParse({ issueId: issueIdParam });
 
     if (!result.success)
     {
@@ -19,6 +21,7 @@ export async function deleteIssue(req: Request, res: Response)
             id: result.data.issueId
         },
         select: {
+            boardId: true,
             board: {
                 select: {
                     org: {
@@ -48,7 +51,8 @@ export async function deleteIssue(req: Request, res: Response)
         }
     })
 
-    
+    wsBroadcaster.broadcastCardDeleted(issue.boardId, deleted.id);
+
     return res.status(200).json({
         success: true,
         data: `issue: "${deleted.title}" deleted`

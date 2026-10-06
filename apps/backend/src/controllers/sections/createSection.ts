@@ -2,6 +2,7 @@ import { prisma } from "db/prisma"
 import type { Request, Response } from "express"
 import zod from "zod"
 import { Forbidden, Not_Found, ValidationError } from "../../helpers/errorClass";
+import { wsBroadcaster } from "../../services/broadcaster";
 
 export async function createSection(req: Request, res: Response)
 {
@@ -10,7 +11,8 @@ export async function createSection(req: Request, res: Response)
     }).safeParse(req.params);
 
     const result2 = zod.object({
-        title: zod.string().trim()
+        title: zod.string().trim(),
+        position: zod.number().optional()
     }).safeParse(req.body);
 
     if (!result.success || !result2.success)
@@ -42,12 +44,26 @@ export async function createSection(req: Request, res: Response)
     if (!user) throw new Not_Found("Invalid Boardid/Board Not found");
     if (user.org.members.length === 0) throw new Forbidden("Admin/Employee access required");
     
+    let position = result2.data.position;
+    if (position === undefined) {
+        const count = await prisma.sections.count({
+            where: { boardId: result.data.boardId }
+        });
+        position = (count + 1) * 1000;
+    }
+
     const section = await prisma.sections.create({
         data: {
             title: result2.data.title,
-            boardId: result.data.boardId
+            boardId: result.data.boardId,
+            position
         }
     })
+
+    wsBroadcaster.broadcast(result.data.boardId, {
+        type: "list:created",
+        payload: { listData: section }
+    });
 
     return res.status(201).json({
         success: true,

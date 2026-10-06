@@ -24,7 +24,8 @@ export async function UpdateOrgHandler(req: Request, res: Response)
             members: {
                 where: {
                     userId: req.id,
-                    role: "admin"
+                    role: "admin",
+                    accepted: true
                 }
             }
         }

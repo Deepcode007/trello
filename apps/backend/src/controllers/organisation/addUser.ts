@@ -54,16 +54,16 @@ export async function inviteUserHandler(req: Request, res: Response)
 
     org.members.forEach((x) =>
     {
-        if (x.userId == req.id)
+        if (x.userId == req.id && x.role === "admin" && x.accepted)
         {
-            if (x.role === "admin") admin = true;
+            admin = true;
         }
-        else if (x.userId == user2.id)
+        if (x.userId == user2.id)
         {
-            if (x.accepted == true) member = true;
+            if (x.accepted) member = true;
             else invited = true;
         }
-    })
+    });
 
     if (!admin) throw new Forbidden("Admin access required");
     if (member) throw new Duplicate("User already member");

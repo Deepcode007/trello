@@ -2,6 +2,7 @@ import { prisma } from "db/prisma"
 import type { Request, Response } from "express"
 import zod from "zod"
 import { Forbidden, Not_Found, ValidationError } from "../../helpers/errorClass";
+import { wsBroadcaster } from "../../services/broadcaster";
 
 export async function deleteBoard(req: Request, res: Response)
 {
@@ -27,7 +28,6 @@ export async function deleteBoard(req: Request, res: Response)
         }
     })
     if (!board) throw new Not_Found("Board not found");
-    
 
     const user = await prisma.membership.findUnique({
         where: {
@@ -50,6 +50,10 @@ export async function deleteBoard(req: Request, res: Response)
         }
     })
 
+    wsBroadcaster.broadcast(result.data.boardId, {
+        type: "board:deleted",
+        payload: { boardId: result.data.boardId }
+    });
 
     return res.status(200).json({
         success: true,

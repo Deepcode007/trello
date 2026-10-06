@@ -2,6 +2,7 @@ import { prisma } from "db/prisma"
 import type { Request, Response } from "express"
 import zod from "zod"
 import { Forbidden, Not_Found, ValidationError } from "../../helpers/errorClass";
+import { wsBroadcaster } from "../../services/broadcaster";
 
 export async function removeAssignment(req: Request, res: Response)
 {
@@ -12,7 +13,6 @@ export async function removeAssignment(req: Request, res: Response)
     const result2 = zod.object({
         email: zod.email()
     }).safeParse(req.body);
-
 
     if (!result.success || !result2.success)
     {
@@ -26,6 +26,7 @@ export async function removeAssignment(req: Request, res: Response)
         select: {
             board: {
                 select: {
+                    id: true,
                     org: {
                         select: {
                             id: true,
@@ -68,6 +69,16 @@ export async function removeAssignment(req: Request, res: Response)
             }
         }
     })
+
+    wsBroadcaster.broadcast(issue.board.id, {
+        type: "card:member_unassigned",
+        payload: {
+            issueId: result.data.issueId,
+            userId: issue.issueMappings[0]!.userId,
+            email: result2.data.email,
+            boardId: issue.board.id
+        }
+    });
 
     return res.status(200).json({
         success: true,

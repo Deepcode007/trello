@@ -2,7 +2,7 @@ import { prisma } from "db/prisma"
 import type { Request, Response } from "express"
 import zod from "zod"
 import { Forbidden, Not_Found, ValidationError } from "../../helpers/errorClass";
-
+import { wsBroadcaster } from "../../services/broadcaster";
 
 export async function addComment(req: Request, res: Response)
 {
@@ -12,7 +12,7 @@ export async function addComment(req: Request, res: Response)
 
     const result2 = zod.object({
         parentId: zod.uuid().optional(),
-        description: zod.string().trim()
+        description: zod.string().trim().min(1)
     }).safeParse(req.body);
 
     if (!result.success || !result2.success)
@@ -33,6 +33,7 @@ export async function addComment(req: Request, res: Response)
             },
             board: {
                 select: {
+                    id: true,
                     org: {
                         select: {
                             members: {
@@ -50,7 +51,7 @@ export async function addComment(req: Request, res: Response)
 
     if (!issue) throw new Not_Found("Issue not found");
     if (issue.board.org.members.length === 0) throw new Forbidden("Members Only");
-    if (result2.data.parentId && issue.comments.length===0) throw new Not_Found("Parent comment not found");
+    if (result2.data.parentId && issue.comments.length === 0) throw new Not_Found("Parent comment not found");
 
     const created = await prisma.comments.create({
         data: {
@@ -59,6 +60,11 @@ export async function addComment(req: Request, res: Response)
             userId: req.id
         }
     })
+
+    wsBroadcaster.broadcast(issue.board.id, {
+        type: "comment:created",
+        payload: { comment: created, issueId: result.data.issueId, boardId: issue.board.id }
+    });
 
     return res.status(201).json({
         success: true,
