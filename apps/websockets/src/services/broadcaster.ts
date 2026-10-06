@@ -13,11 +13,19 @@ import {
     cleanBoardId
 } from "../types/events";
 
+export type EvictionHandler = (options: {
+    userId: string;
+    orgId?: string;
+    boardIds?: string[];
+    reason?: string;
+}) => Promise<number | boolean> | number | boolean;
+
 const GLOBAL_BROADCASTER_KEY = Symbol.for("trello.ws.broadcaster");
 
 export class WebSocketBroadcaster extends EventEmitter {
     private server: Server<WebSocketData> | null = null;
     private wsPort: number = 3001;
+    private evictionHandler: EvictionHandler | null = null;
 
     constructor() {
         super();
@@ -52,6 +60,14 @@ export class WebSocketBroadcaster extends EventEmitter {
 
     public setPort(port: number): void {
         this.wsPort = port;
+    }
+
+    public setEvictionHandler(handler: EvictionHandler): void {
+        this.evictionHandler = handler;
+    }
+
+    public getEvictionHandler(): EvictionHandler | null {
+        return this.evictionHandler;
     }
 
     public publish(topic: string, message: unknown): number {
@@ -158,7 +174,7 @@ export class WebSocketBroadcaster extends EventEmitter {
         // Fallback: If running in separate processes (e.g., Express on 3000 and Bun.serve on 3001)
         try {
             const endpoint = `http://127.0.0.1:${this.wsPort}/internal/broadcast`;
-            const internalSecret = process.env.jwt_key || process.env.JWT_SECRET || "";
+            const internalSecret = process.env.INTERNAL_BROADCAST_SECRET || process.env.jwt_key || process.env.JWT_SECRET || "";
             const headers: Record<string, string> = { "Content-Type": "application/json" };
             if (internalSecret) {
                 headers["x-internal-secret"] = internalSecret;
@@ -173,6 +189,50 @@ export class WebSocketBroadcaster extends EventEmitter {
             return res.ok;
         } catch {
             // WS server is either offline or unreachable; fail gracefully without throwing
+            return false;
+        }
+    }
+
+    public async evictUser(userId: string, orgId?: string, boardIds?: string[]): Promise<boolean> {
+        if (!userId || typeof userId !== "string" || !userId.trim()) {
+            return false;
+        }
+
+        this.emit("evictUser", { userId, orgId, boardIds });
+
+        if (this.evictionHandler) {
+            try {
+                await this.evictionHandler({
+                    userId,
+                    orgId,
+                    boardIds,
+                    reason: "FORBIDDEN_REVOKED: Organization membership terminated"
+                });
+                return true;
+            } catch {
+                return false;
+            }
+        }
+
+        try {
+            const endpoint = `http://127.0.0.1:${this.wsPort}/internal/evict-user`;
+            const internalSecret = process.env.INTERNAL_BROADCAST_SECRET || process.env.jwt_key || process.env.JWT_SECRET || "";
+            const headers: Record<string, string> = { "Content-Type": "application/json" };
+            if (internalSecret) headers["x-internal-secret"] = internalSecret;
+
+            const res = await fetch(endpoint, {
+                method: "POST",
+                headers,
+                body: JSON.stringify({
+                    userId,
+                    orgId,
+                    boardIds,
+                    reason: "FORBIDDEN_REVOKED: Organization membership terminated"
+                }),
+                signal: AbortSignal.timeout(1000)
+            });
+            return res.ok;
+        } catch {
             return false;
         }
     }

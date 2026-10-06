@@ -51,9 +51,17 @@ export function cleanBoardId(topicOrBoardId: string): string {
     return trimmed.startsWith("board_") ? trimmed.slice(6) : trimmed;
 }
 
+export type EvictionHandler = (options: {
+    userId: string;
+    orgId?: string;
+    boardIds?: string[];
+    reason?: string;
+}) => Promise<number | boolean> | number | boolean;
+
 export class WebSocketBroadcaster extends EventEmitter {
     private server: any = null;
     private wsPort: number = 3001;
+    private evictionHandler: EvictionHandler | null = null;
 
     constructor() {
         super();
@@ -88,6 +96,14 @@ export class WebSocketBroadcaster extends EventEmitter {
 
     public setPort(port: number): void {
         this.wsPort = port;
+    }
+
+    public setEvictionHandler(handler: EvictionHandler): void {
+        this.evictionHandler = handler;
+    }
+
+    public getEvictionHandler(): EvictionHandler | null {
+        return this.evictionHandler;
     }
 
     public publish(topic: string, message: unknown): number {
@@ -214,7 +230,26 @@ export class WebSocketBroadcaster extends EventEmitter {
     }
 
     public async evictUser(userId: string, orgId?: string, boardIds?: string[]): Promise<boolean> {
+        if (!userId || typeof userId !== "string" || !userId.trim()) {
+            return false;
+        }
+
         this.emit("evictUser", { userId, orgId, boardIds });
+
+        if (this.evictionHandler) {
+            try {
+                await this.evictionHandler({
+                    userId,
+                    orgId,
+                    boardIds,
+                    reason: "FORBIDDEN_REVOKED: Organization membership terminated"
+                });
+                return true;
+            } catch {
+                return false;
+            }
+        }
+
         try {
             const endpoint = `http://127.0.0.1:${this.wsPort}/internal/evict-user`;
             const internalSecret = process.env.INTERNAL_BROADCAST_SECRET || process.env.jwt_key || process.env.JWT_SECRET || "";

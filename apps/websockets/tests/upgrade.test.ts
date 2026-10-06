@@ -1,6 +1,6 @@
 import { describe, expect, it, mock } from "bun:test";
 import jwt from "backend/src/helpers/jwt";
-import { handleUpgradeRequest, createWebSocketServer, userSocketRegistry } from "../src/server";
+import { handleUpgradeRequest, createWebSocketServer, userSocketRegistry, evictUserSockets } from "../src/server";
 import type { WebSocketData } from "../src/types/events";
 
 const JWT_SECRET = "upgrade-test-jwt-secret";
@@ -393,7 +393,7 @@ describe("WebSocket Upgrade Handshake & HTTP Layer Tests", () => {
 
             const res = await handleUpgradeRequest(req, mockServer, JWT_SECRET);
             expect(res?.status).toBe(200);
-            const data = await res?.json();
+            const data = (await res?.json()) as any;
             expect(data.success).toBe(true);
 
             // ws1 still has board_org2_b1 subscription and must NOT be closed
@@ -448,6 +448,67 @@ describe("WebSocket Upgrade Handshake & HTTP Layer Tests", () => {
             expect(wsCloseCode).toBe(4003);
             expect(mockWs.data.subscriptions.size).toBe(0);
             expect(userSocketRegistry.has(testUserId)).toBe(false);
+        });
+
+        it("evictUserSockets handles direct in-memory invocation with zero latency", async () => {
+            const mockServer = createMockServer();
+            const directUserId = "user-direct-evict";
+
+            let wsClosed = false;
+            let wsCloseCode = 0;
+            const mockWs: any = {
+                data: {
+                    userId: directUserId,
+                    subscriptions: new Set(["board_orgDirect_1"])
+                },
+                send: mock(() => {}),
+                unsubscribe: mock(() => {}),
+                close: mock((code: number) => { wsClosed = true; wsCloseCode = code; })
+            };
+
+            userSocketRegistry.set(directUserId, new Set([mockWs]));
+
+            const count = await evictUserSockets(mockServer as any, {
+                userId: directUserId,
+                boardIds: ["orgDirect_1"]
+            });
+
+            expect(count).toBe(1);
+            expect(wsClosed).toBe(true);
+            expect(wsCloseCode).toBe(4003);
+            expect(userSocketRegistry.has(directUserId)).toBe(false);
+        });
+
+        it("evictUserSockets returns 0 safely for unknown userId or invalid input", async () => {
+            const mockServer = createMockServer();
+            expect(await evictUserSockets(mockServer as any, { userId: "" })).toBe(0);
+            expect(await evictUserSockets(mockServer as any, {} as any)).toBe(0);
+            expect(await evictUserSockets(mockServer as any, { userId: "non-existent-user" })).toBe(0);
+        });
+
+        it("evictUserSockets safely handles sockets with missing or undefined subscriptions without throwing", async () => {
+            const mockServer = createMockServer();
+            const malformedUserId = "user-malformed-ws";
+
+            const mockMalformedWs1: any = { data: undefined };
+            const mockMalformedWs2: any = { data: { userId: malformedUserId, subscriptions: undefined } };
+
+            userSocketRegistry.set(malformedUserId, new Set([mockMalformedWs1, mockMalformedWs2]));
+
+            // Test scoped eviction
+            const countScoped = await evictUserSockets(mockServer as any, {
+                userId: malformedUserId,
+                orgId: "org-test"
+            });
+            expect(countScoped).toBe(0);
+
+            // Test global eviction
+            const countGlobal = await evictUserSockets(mockServer as any, {
+                userId: malformedUserId
+            });
+            expect(countGlobal).toBe(2);
+
+            userSocketRegistry.delete(malformedUserId);
         });
     });
 });

@@ -93,7 +93,13 @@ export async function deleteUserHandler(req: Request, res: Response)
     }
 
     // Layer 2: Forcibly terminate evicted user's active WebSocket connections for this organization
-    await wsBroadcaster.evictUser(user_found.userId, result.data.orgId, boardIds);
+    try {
+        if (typeof wsBroadcaster.evictUser === "function") {
+            await wsBroadcaster.evictUser(user_found.userId, result.data.orgId, boardIds);
+        }
+    } catch (err) {
+        console.error("Failed to evict user WebSocket connections:", err);
+    }
 
     return res.status(200).json({
         success: true,

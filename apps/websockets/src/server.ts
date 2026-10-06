@@ -57,6 +57,118 @@ export interface WebSocketServerOptions {
 // Layer 2 In-Memory Connection Registry: maps authenticated userId to active sockets
 export const userSocketRegistry = new Map<string, Set<ServerWebSocket<WebSocketData>>>();
 
+export async function evictUserSockets(
+    server: Pick<Server<WebSocketData>, "publish"> | null | undefined,
+    body: { userId: string; orgId?: string; boardIds?: string[]; reason?: string }
+): Promise<number> {
+    if (!body?.userId || typeof body.userId !== "string") {
+        return 0;
+    }
+    const sockets = userSocketRegistry.get(body.userId);
+    let evictedCount = 0;
+    if (sockets && sockets.size > 0) {
+        const hasOrgScope = Boolean(body.orgId || (body.boardIds && body.boardIds.length > 0));
+
+        if (hasOrgScope) {
+            let targetBoardIds = Array.isArray(body.boardIds) ? [...body.boardIds] : [];
+            if (targetBoardIds.length === 0 && body.orgId) {
+                try {
+                    const boards = await prisma.boards.findMany({
+                        where: { orgId: body.orgId },
+                        select: { id: true }
+                    });
+                    targetBoardIds = boards.map(b => b.id);
+                } catch {}
+            }
+
+            const targetTopics = new Set(targetBoardIds.map(formatBoardTopic).filter(Boolean));
+            const socketsToRemove: ServerWebSocket<WebSocketData>[] = [];
+
+            for (const ws of sockets) {
+                if (!ws?.data?.subscriptions) continue;
+                let matchedAny = false;
+                for (const topic of Array.from(ws.data.subscriptions)) {
+                    if (targetTopics.has(topic)) {
+                        matchedAny = true;
+                        const boardId = cleanBoardId(topic) || topic;
+
+                        try {
+                            if (server && typeof server.publish === "function") {
+                                server.publish(topic, JSON.stringify({
+                                    type: "user:left",
+                                    payload: {
+                                        userId: ws.data.userId,
+                                        name: ws.data.name || ws.data.email || ws.data.userId,
+                                        email: ws.data.email,
+                                        boardId
+                                    },
+                                    timestamp: Date.now()
+                                }));
+                            }
+                        } catch {}
+
+                        try {
+                            ws.send(JSON.stringify({
+                                type: "board:evicted",
+                                boardId,
+                                reason: body.reason || "FORBIDDEN_REVOKED: Organization membership terminated"
+                            }));
+                        } catch {}
+
+                        try { ws.unsubscribe(topic); } catch {}
+                        ws.data.subscriptions.delete(topic);
+                    }
+                }
+
+                if (matchedAny) {
+                    evictedCount++;
+                    // Only terminate the socket if it no longer has active subscriptions to any other boards
+                    if (ws.data.subscriptions.size === 0) {
+                        try {
+                            ws.close(4003, body.reason || "FORBIDDEN_REVOKED: Organization membership terminated");
+                        } catch {}
+                        socketsToRemove.push(ws);
+                    }
+                }
+            }
+
+            for (const ws of socketsToRemove) {
+                sockets.delete(ws);
+            }
+            if (sockets.size === 0) {
+                userSocketRegistry.delete(body.userId);
+            }
+        } else {
+            // Global user eviction (no orgId/boardIds specified) - terminate all sockets
+            evictedCount = sockets.size;
+            for (const ws of sockets) {
+                if (!ws?.data?.subscriptions) continue;
+                for (const topic of ws.data.subscriptions) {
+                    try {
+                        if (server && typeof server.publish === "function") {
+                            server.publish(topic, JSON.stringify({
+                                type: "user:left",
+                                payload: {
+                                    userId: ws.data.userId,
+                                    name: ws.data.name || ws.data.email || ws.data.userId,
+                                    email: ws.data.email,
+                                    boardId: cleanBoardId(topic) || topic
+                                },
+                                timestamp: Date.now()
+                            }));
+                        }
+                    } catch {}
+                    try { ws.unsubscribe(topic); } catch {}
+                }
+                ws.data.subscriptions.clear();
+                try { ws.close(4003, body.reason || "FORBIDDEN_REVOKED: User session terminated"); } catch {}
+            }
+            userSocketRegistry.delete(body.userId);
+        }
+    }
+    return evictedCount;
+}
+
 export function handleUpgradeRequest(
     req: Request,
     server: Pick<Server<WebSocketData>, "upgrade" | "publish" | "port">,
@@ -147,102 +259,7 @@ export function handleUpgradeRequest(
                         headers: { "Content-Type": "application/json" }
                     });
                 }
-                const sockets = userSocketRegistry.get(body.userId);
-                let evictedCount = 0;
-                if (sockets && sockets.size > 0) {
-                    const hasOrgScope = Boolean(body.orgId || (body.boardIds && body.boardIds.length > 0));
-
-                    if (hasOrgScope) {
-                        let targetBoardIds = Array.isArray(body.boardIds) ? [...body.boardIds] : [];
-                        if (targetBoardIds.length === 0 && body.orgId) {
-                            try {
-                                const boards = await prisma.boards.findMany({
-                                    where: { orgId: body.orgId },
-                                    select: { id: true }
-                                });
-                                targetBoardIds = boards.map(b => b.id);
-                            } catch {}
-                        }
-
-                        const targetTopics = new Set(targetBoardIds.map(formatBoardTopic).filter(Boolean));
-                        const socketsToRemove: ServerWebSocket<WebSocketData>[] = [];
-
-                        for (const ws of sockets) {
-                            let matchedAny = false;
-                            for (const topic of Array.from(ws.data.subscriptions)) {
-                                if (targetTopics.has(topic)) {
-                                    matchedAny = true;
-                                    const boardId = cleanBoardId(topic) || topic;
-
-                                    try {
-                                        server.publish(topic, JSON.stringify({
-                                            type: "user:left",
-                                            payload: {
-                                                userId: ws.data.userId,
-                                                name: ws.data.name || ws.data.email || ws.data.userId,
-                                                email: ws.data.email,
-                                                boardId
-                                            },
-                                            timestamp: Date.now()
-                                        }));
-                                    } catch {}
-
-                                    try {
-                                        ws.send(JSON.stringify({
-                                            type: "board:evicted",
-                                            boardId,
-                                            reason: body.reason || "FORBIDDEN_REVOKED: Organization membership terminated"
-                                        }));
-                                    } catch {}
-
-                                    try { ws.unsubscribe(topic); } catch {}
-                                    ws.data.subscriptions.delete(topic);
-                                }
-                            }
-
-                            if (matchedAny) {
-                                evictedCount++;
-                                // Only terminate the socket if it no longer has active subscriptions to any other boards
-                                if (ws.data.subscriptions.size === 0) {
-                                    try {
-                                        ws.close(4003, body.reason || "FORBIDDEN_REVOKED: Organization membership terminated");
-                                    } catch {}
-                                    socketsToRemove.push(ws);
-                                }
-                            }
-                        }
-
-                        for (const ws of socketsToRemove) {
-                            sockets.delete(ws);
-                        }
-                        if (sockets.size === 0) {
-                            userSocketRegistry.delete(body.userId);
-                        }
-                    } else {
-                        // Global user eviction (no orgId/boardIds specified) - terminate all sockets
-                        evictedCount = sockets.size;
-                        for (const ws of sockets) {
-                            for (const topic of ws.data.subscriptions) {
-                                try {
-                                    server.publish(topic, JSON.stringify({
-                                        type: "user:left",
-                                        payload: {
-                                            userId: ws.data.userId,
-                                            name: ws.data.name || ws.data.email || ws.data.userId,
-                                            email: ws.data.email,
-                                            boardId: cleanBoardId(topic) || topic
-                                        },
-                                        timestamp: Date.now()
-                                    }));
-                                } catch {}
-                                try { ws.unsubscribe(topic); } catch {}
-                            }
-                            ws.data.subscriptions.clear();
-                            try { ws.close(4003, body.reason || "FORBIDDEN_REVOKED: User session terminated"); } catch {}
-                        }
-                        userSocketRegistry.delete(body.userId);
-                    }
-                }
+                const evictedCount = await evictUserSockets(server, body as any);
                 return new Response(JSON.stringify({ success: true, evictedCount }), {
                     status: 200,
                     headers: { "Content-Type": "application/json" }
@@ -526,6 +543,7 @@ export function createWebSocketServer(options: WebSocketServerOptions = {}): Ser
 
     // Register with singleton broadcaster
     wsBroadcaster.setServer(server);
+    wsBroadcaster.setEvictionHandler((opts) => evictUserSockets(server, opts));
 
     return server;
 }

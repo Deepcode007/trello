@@ -8,8 +8,10 @@ import { deleteSection } from "../../src/controllers/sections/deleteSection";
 import { renameSection } from "../../src/controllers/sections/renameSection";
 import { getAllSections } from "../../src/controllers/sections/getAllSections";
 import { getAllIssues } from "../../src/controllers/issues/getAllIssues";
+import { issueDetail } from "../../src/controllers/issues/issueDetail";
 import { getBoardDetails } from "../../src/controllers/board/getaBoard";
 import { wsBroadcaster } from "../../src/services/broadcaster";
+import { WebSocketBroadcaster as WsBroadcaster } from "../../../websockets/src/services/broadcaster";
 
 describe("Controller fixes unit tests", () => {
     const validBoardId = "11111111-1111-4111-8111-111111111111";
@@ -668,6 +670,155 @@ describe("Controller fixes unit tests", () => {
             wsBroadcaster.evictUser = origEvictUser;
             wsBroadcaster.broadcast = origBroadcast;
         });
+
+        it("deleteUserHandler succeeds when wsBroadcaster comes from websockets broadcaster instance in dual-server mode", async () => {
+            const origOrgFind = prisma.orgs.findUnique;
+            const origMemberDelete = prisma.membership.delete;
+            const origBoardsFind = prisma.boards.findMany;
+            const origEvictUser = wsBroadcaster.evictUser;
+            const origBroadcast = wsBroadcaster.broadcast;
+
+            const targetUserEmail = "dual-server-member@example.com";
+            const targetUserId = "member-uid-dual-1";
+
+            prisma.orgs.findUnique = mock(() => Promise.resolve({
+                id: validOrgId,
+                members: [
+                    { userId: userId, role: "admin", user: { email: "admin@example.com" } },
+                    { userId: targetUserId, role: "employee", user: { email: targetUserEmail } }
+                ],
+                _count: { members: 1 }
+            })) as any;
+
+            prisma.membership.delete = mock(() => Promise.resolve({})) as any;
+            prisma.boards.findMany = mock(() => Promise.resolve([{ id: "board-dual-1" }])) as any;
+
+            // Instantiate WebSocketBroadcaster from websockets app
+            const wsServerBroadcaster = new WsBroadcaster();
+            let evictionHandlerCalled = false;
+            wsServerBroadcaster.setEvictionHandler(async (opts) => {
+                evictionHandlerCalled = true;
+                expect(opts.userId).toBe(targetUserId);
+                expect(opts.orgId).toBe(validOrgId);
+                expect(opts.boardIds).toEqual(["board-dual-1"]);
+                return 1;
+            });
+
+            // Replicate dual-server singleton behavior: backend uses wsBroadcaster which has evictUser
+            wsBroadcaster.evictUser = wsServerBroadcaster.evictUser.bind(wsServerBroadcaster);
+            wsBroadcaster.broadcast = mock(() => Promise.resolve(true)) as any;
+
+            const req: any = {
+                id: userId,
+                params: { orgId: validOrgId },
+                body: { email: targetUserEmail }
+            };
+            const res = createMockRes();
+
+            await deleteUserHandler(req, res);
+
+            expect(res.statusCode).toBe(200);
+            expect(res.body.success).toBe(true);
+            expect(evictionHandlerCalled).toBe(true);
+
+            prisma.orgs.findUnique = origOrgFind;
+            prisma.membership.delete = origMemberDelete;
+            prisma.boards.findMany = origBoardsFind;
+            wsBroadcaster.evictUser = origEvictUser;
+            wsBroadcaster.broadcast = origBroadcast;
+        });
+
+        it("deleteUserHandler succeeds and returns 200 even when wsBroadcaster.evictUser throws an unexpected error", async () => {
+            const origOrgFind = prisma.orgs.findUnique;
+            const origMemberDelete = prisma.membership.delete;
+            const origBoardsFind = prisma.boards.findMany;
+            const origEvictUser = wsBroadcaster.evictUser;
+            const origBroadcast = wsBroadcaster.broadcast;
+
+            const targetUserEmail = "member-throwing@example.com";
+            const targetUserId = "member-uid-throw";
+
+            prisma.orgs.findUnique = mock(() => Promise.resolve({
+                id: validOrgId,
+                members: [
+                    { userId: userId, role: "admin", user: { email: "admin@example.com" } },
+                    { userId: targetUserId, role: "employee", user: { email: targetUserEmail } }
+                ],
+                _count: { members: 1 }
+            })) as any;
+
+            prisma.membership.delete = mock(() => Promise.resolve({})) as any;
+            prisma.boards.findMany = mock(() => Promise.resolve([{ id: "board-1" }])) as any;
+
+            wsBroadcaster.evictUser = mock(() => {
+                throw new Error("Unexpected network crash during eviction");
+            }) as any;
+            wsBroadcaster.broadcast = mock(() => Promise.resolve(true)) as any;
+
+            const req: any = {
+                id: userId,
+                params: { orgId: validOrgId },
+                body: { email: targetUserEmail }
+            };
+            const res = createMockRes();
+
+            await deleteUserHandler(req, res);
+
+            expect(res.statusCode).toBe(200);
+            expect(res.body.success).toBe(true);
+            expect(res.body.data).toBe("user deleted");
+
+            prisma.orgs.findUnique = origOrgFind;
+            prisma.membership.delete = origMemberDelete;
+            prisma.boards.findMany = origBoardsFind;
+            wsBroadcaster.evictUser = origEvictUser;
+            wsBroadcaster.broadcast = origBroadcast;
+        });
+
+        it("deleteUserHandler succeeds when wsBroadcaster.evictUser is undefined or not a function", async () => {
+            const origOrgFind = prisma.orgs.findUnique;
+            const origMemberDelete = prisma.membership.delete;
+            const origBoardsFind = prisma.boards.findMany;
+            const origEvictUser = wsBroadcaster.evictUser;
+            const origBroadcast = wsBroadcaster.broadcast;
+
+            const targetUserEmail = "member-undef@example.com";
+            const targetUserId = "member-uid-undef";
+
+            prisma.orgs.findUnique = mock(() => Promise.resolve({
+                id: validOrgId,
+                members: [
+                    { userId: userId, role: "admin", user: { email: "admin@example.com" } },
+                    { userId: targetUserId, role: "employee", user: { email: targetUserEmail } }
+                ],
+                _count: { members: 1 }
+            })) as any;
+
+            prisma.membership.delete = mock(() => Promise.resolve({})) as any;
+            prisma.boards.findMany = mock(() => Promise.resolve([{ id: "board-1" }])) as any;
+
+            // Simulate legacy / missing evictUser method
+            (wsBroadcaster as any).evictUser = undefined;
+            wsBroadcaster.broadcast = mock(() => Promise.resolve(true)) as any;
+
+            const req: any = {
+                id: userId,
+                params: { orgId: validOrgId },
+                body: { email: targetUserEmail }
+            };
+            const res = createMockRes();
+
+            await deleteUserHandler(req, res);
+
+            expect(res.statusCode).toBe(200);
+            expect(res.body.success).toBe(true);
+
+            prisma.orgs.findUnique = origOrgFind;
+            prisma.membership.delete = origMemberDelete;
+            prisma.boards.findMany = origBoardsFind;
+            wsBroadcaster.evictUser = origEvictUser;
+            wsBroadcaster.broadcast = origBroadcast;
+        });
     });
 
     describe("Deterministic Query Ordering with Compound Sort Criteria", () => {
@@ -775,6 +926,59 @@ describe("Controller fixes unit tests", () => {
             ]);
 
             prisma.sections.findUnique = origSectionFind;
+        });
+
+        it("issueDetail queries checklists and checklist items with position and secondary tie-breakers", async () => {
+            const origIssueFind = prisma.issues.findUnique;
+
+            let queryArgs: any = null;
+            prisma.issues.findUnique = mock((args: any) => {
+                queryArgs = args;
+                return Promise.resolve({
+                    id: "issue-abc",
+                    title: "Issue with Checklists",
+                    board: {
+                        title: "Test Board",
+                        id: validBoardId,
+                        org: {
+                            members: [{ id: "m-1" }]
+                        }
+                    },
+                    section: { id: validSectionId, title: "Todo" },
+                    issueMappings: [],
+                    checklists: [
+                        {
+                            id: "cl-1",
+                            title: "Checklist 1",
+                            position: 1000,
+                            items: []
+                        }
+                    ],
+                    labels: []
+                });
+            }) as any;
+
+            const req: any = {
+                id: userId,
+                params: { issueId: validBoardId }
+            };
+            const res = createMockRes();
+
+            await issueDetail(req, res);
+
+            expect(res.statusCode).toBe(200);
+            expect(queryArgs.select.checklists.orderBy).toEqual([
+                { position: "asc" },
+                { createdAt: "asc" },
+                { id: "asc" }
+            ]);
+            expect(queryArgs.select.checklists.select.items.orderBy).toEqual([
+                { position: "asc" },
+                { createdAt: "asc" },
+                { id: "asc" }
+            ]);
+
+            prisma.issues.findUnique = origIssueFind;
         });
     });
 });

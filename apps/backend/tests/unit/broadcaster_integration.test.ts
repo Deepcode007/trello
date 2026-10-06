@@ -147,4 +147,90 @@ describe("Backend Broadcaster Singleton and Event-Emitter Integration Tests", ()
             expect(res).toBe(false);
         }
     });
+
+    describe("evictUser and in-memory EvictionHandler", () => {
+        it("invokes registered evictionHandler in-memory directly", async () => {
+            const broadcaster = new WebSocketBroadcaster();
+            let calledWith: any = null;
+
+            broadcaster.setEvictionHandler(async (opts) => {
+                calledWith = opts;
+                return true;
+            });
+
+            expect(broadcaster.getEvictionHandler()).not.toBeNull();
+
+            const ok = await broadcaster.evictUser("user_backend_test", "org_backend_test", ["b1", "b2"]);
+            expect(ok).toBe(true);
+            expect(calledWith.userId).toBe("user_backend_test");
+            expect(calledWith.orgId).toBe("org_backend_test");
+            expect(calledWith.boardIds).toEqual(["b1", "b2"]);
+        });
+
+        it("returns false if evictionHandler throws an error", async () => {
+            const broadcaster = new WebSocketBroadcaster();
+            broadcaster.setEvictionHandler(() => {
+                throw new Error("Eviction crash");
+            });
+
+            const ok = await broadcaster.evictUser("user_err");
+            expect(ok).toBe(false);
+        });
+
+        it("falls back to HTTP IPC endpoint when no handler is configured", async () => {
+            const broadcaster = new WebSocketBroadcaster();
+            broadcaster.setPort(9999);
+
+            const origFetch = globalThis.fetch;
+            let fetchUrl = "";
+            let fetchBody: any = null;
+
+            globalThis.fetch = ((url: any, opts: any) => {
+                fetchUrl = String(url);
+                fetchBody = JSON.parse(opts.body);
+                return Promise.resolve(new Response(JSON.stringify({ success: true, evictedCount: 1 }), { status: 200 }));
+            }) as any;
+
+            try {
+                const ok = await broadcaster.evictUser("user_http", "org_http", ["b_http"]);
+                expect(ok).toBe(true);
+                expect(fetchUrl).toBe("http://127.0.0.1:9999/internal/evict-user");
+                expect(fetchBody.userId).toBe("user_http");
+            } finally {
+                globalThis.fetch = origFetch;
+            }
+        });
+
+        it("returns false when HTTP fallback fails", async () => {
+            const broadcaster = new WebSocketBroadcaster();
+            broadcaster.setPort(9999);
+
+            const origFetch = globalThis.fetch;
+            globalThis.fetch = (() => Promise.reject(new Error("Connection refused"))) as any;
+
+            try {
+                const ok = await broadcaster.evictUser("user_fail");
+                expect(ok).toBe(false);
+            } finally {
+                globalThis.fetch = origFetch;
+            }
+        });
+
+        it("returns false immediately for empty, whitespace, or invalid userId", async () => {
+            const broadcaster = new WebSocketBroadcaster();
+            let handlerCalled = false;
+            broadcaster.setEvictionHandler(() => {
+                handlerCalled = true;
+                return true;
+            });
+
+            expect(await broadcaster.evictUser("")).toBe(false);
+            expect(await broadcaster.evictUser("   ")).toBe(false);
+            expect(await broadcaster.evictUser(null as any)).toBe(false);
+            expect(await broadcaster.evictUser(undefined as any)).toBe(false);
+            expect(await broadcaster.evictUser(12345 as any)).toBe(false);
+            expect(handlerCalled).toBe(false);
+        });
+    });
 });
+
