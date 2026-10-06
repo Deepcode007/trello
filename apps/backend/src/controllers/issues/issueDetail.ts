@@ -67,13 +67,21 @@ export async function issueDetail(req: Request, res: Response)
                 }
             },
             checklists: {
-                orderBy: { position: "asc" },
+                orderBy: [
+                    { position: "asc" },
+                    { createdAt: "asc" },
+                    { id: "asc" }
+                ],
                 select: {
                     id: true,
                     title: true,
                     position: true,
                     items: {
-                        orderBy: { position: "asc" },
+                        orderBy: [
+                            { position: "asc" },
+                            { createdAt: "asc" },
+                            { id: "asc" }
+                        ],
                         select: {
                             id: true,
                             content: true,

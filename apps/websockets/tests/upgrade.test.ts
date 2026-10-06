@@ -1,6 +1,6 @@
 import { describe, expect, it, mock } from "bun:test";
 import jwt from "backend/src/helpers/jwt";
-import { handleUpgradeRequest, createWebSocketServer } from "../src/server";
+import { handleUpgradeRequest, createWebSocketServer, userSocketRegistry } from "../src/server";
 import type { WebSocketData } from "../src/types/events";
 
 const JWT_SECRET = "upgrade-test-jwt-secret";
@@ -314,5 +314,140 @@ describe("WebSocket Upgrade Handshake & HTTP Layer Tests", () => {
         expect(s).toBeDefined();
         expect(s.port).toBe(3098);
         s.stop(true);
+    });
+
+    describe("POST /internal/evict-user Tests", () => {
+        it("rejects /internal/evict-user with 403 on invalid secret", async () => {
+            const mockServer = createMockServer();
+            const req = new Request("http://localhost:3001/internal/evict-user", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "x-internal-secret": "wrong-secret"
+                },
+                body: JSON.stringify({ userId: "u1" })
+            });
+
+            const res = await handleUpgradeRequest(req, mockServer, JWT_SECRET);
+            expect(res?.status).toBe(403);
+        });
+
+        it("rejects /internal/evict-user with 400 on missing or invalid userId", async () => {
+            const mockServer = createMockServer();
+            const req = new Request("http://localhost:3001/internal/evict-user", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "x-internal-secret": JWT_SECRET
+                },
+                body: JSON.stringify({})
+            });
+
+            const res = await handleUpgradeRequest(req, mockServer, JWT_SECRET);
+            expect(res?.status).toBe(400);
+        });
+
+        it("evicts user from specific org boards without closing sockets subscribed to other boards", async () => {
+            const mockServer = createMockServer();
+            const testUserId = "user-multi-org-1";
+
+            let ws1Closed = false;
+            let ws1Sent: any[] = [];
+            const mockWs1: any = {
+                data: {
+                    userId: testUserId,
+                    subscriptions: new Set(["board_org1_b1", "board_org2_b1"])
+                },
+                send: mock((msg: string) => { ws1Sent.push(JSON.parse(msg)); }),
+                unsubscribe: mock((topic: string) => {}),
+                close: mock(() => { ws1Closed = true; })
+            };
+
+            let ws2Closed = false;
+            let ws2CloseCode = 0;
+            let ws2Sent: any[] = [];
+            const mockWs2: any = {
+                data: {
+                    userId: testUserId,
+                    subscriptions: new Set(["board_org1_b2"])
+                },
+                send: mock((msg: string) => { ws2Sent.push(JSON.parse(msg)); }),
+                unsubscribe: mock((topic: string) => {}),
+                close: mock((code: number) => { ws2Closed = true; ws2CloseCode = code; })
+            };
+
+            userSocketRegistry.set(testUserId, new Set([mockWs1, mockWs2]));
+
+            const req = new Request("http://localhost:3001/internal/evict-user", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "x-internal-secret": JWT_SECRET
+                },
+                body: JSON.stringify({
+                    userId: testUserId,
+                    orgId: "org1",
+                    boardIds: ["org1_b1", "org1_b2"]
+                })
+            });
+
+            const res = await handleUpgradeRequest(req, mockServer, JWT_SECRET);
+            expect(res?.status).toBe(200);
+            const data = await res?.json();
+            expect(data.success).toBe(true);
+
+            // ws1 still has board_org2_b1 subscription and must NOT be closed
+            expect(ws1Closed).toBe(false);
+            expect(mockWs1.data.subscriptions.has("board_org1_b1")).toBe(false);
+            expect(mockWs1.data.subscriptions.has("board_org2_b1")).toBe(true);
+            expect(ws1Sent.some((m: any) => m.type === "board:evicted" && m.boardId === "org1_b1")).toBe(true);
+
+            // ws2 only had board_org1_b2, so its subscriptions are now empty and it must be closed with 4003
+            expect(ws2Closed).toBe(true);
+            expect(ws2CloseCode).toBe(4003);
+            expect(mockWs2.data.subscriptions.size).toBe(0);
+
+            // userSocketRegistry should still contain ws1
+            const remaining = userSocketRegistry.get(testUserId);
+            expect(remaining?.has(mockWs1)).toBe(true);
+            expect(remaining?.has(mockWs2)).toBe(false);
+
+            userSocketRegistry.delete(testUserId);
+        });
+
+        it("closes all sockets on global user eviction without orgId", async () => {
+            const mockServer = createMockServer();
+            const testUserId = "user-global-evict-1";
+
+            let wsClosed = false;
+            let wsCloseCode = 0;
+            const mockWs: any = {
+                data: {
+                    userId: testUserId,
+                    subscriptions: new Set(["board_org1_b1", "board_org2_b1"])
+                },
+                send: mock(() => {}),
+                unsubscribe: mock(() => {}),
+                close: mock((code: number) => { wsClosed = true; wsCloseCode = code; })
+            };
+
+            userSocketRegistry.set(testUserId, new Set([mockWs]));
+
+            const req = new Request("http://localhost:3001/internal/evict-user", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "x-internal-secret": JWT_SECRET
+                },
+                body: JSON.stringify({ userId: testUserId })
+            });
+
+            const res = await handleUpgradeRequest(req, mockServer, JWT_SECRET);
+            expect(res?.status).toBe(200);
+            expect(wsClosed).toBe(true);
+            expect(wsCloseCode).toBe(4003);
+            expect(mockWs.data.subscriptions.size).toBe(0);
+            expect(userSocketRegistry.has(testUserId)).toBe(false);
+        });
     });
 });

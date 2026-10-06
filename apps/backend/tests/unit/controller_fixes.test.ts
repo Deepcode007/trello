@@ -3,8 +3,12 @@ import { prisma } from "db/prisma";
 import { createIssue } from "../../src/controllers/issues/createIssue";
 import { updateIssue } from "../../src/controllers/issues/updateIssue";
 import { OrgMembersHandler } from "../../src/controllers/organisation/allMembers";
+import { deleteUserHandler } from "../../src/controllers/organisation/removeUser";
 import { deleteSection } from "../../src/controllers/sections/deleteSection";
 import { renameSection } from "../../src/controllers/sections/renameSection";
+import { getAllSections } from "../../src/controllers/sections/getAllSections";
+import { getAllIssues } from "../../src/controllers/issues/getAllIssues";
+import { getBoardDetails } from "../../src/controllers/board/getaBoard";
 import { wsBroadcaster } from "../../src/services/broadcaster";
 
 describe("Controller fixes unit tests", () => {
@@ -607,6 +611,170 @@ describe("Controller fixes unit tests", () => {
             expect(broadcastArgs.payload.sourceList).toBe(validSectionId);
             expect(broadcastArgs.payload.destList).toBe(validTargetSectionId);
             expect(broadcastArgs.payload.position).toBe(1000);
+        });
+    });
+
+    describe("Organization Member Eviction Scoping", () => {
+        it("passes boardIds of organization to wsBroadcaster.evictUser", async () => {
+            const origOrgFind = prisma.orgs.findUnique;
+            const origMemberDelete = prisma.membership.delete;
+            const origBoardsFind = prisma.boards.findMany;
+            const origEvictUser = wsBroadcaster.evictUser;
+            const origBroadcast = wsBroadcaster.broadcast;
+
+            const targetUserEmail = "member-to-remove@example.com";
+            const targetUserId = "member-uid-999";
+
+            prisma.orgs.findUnique = mock(() => Promise.resolve({
+                id: validOrgId,
+                members: [
+                    { userId: userId, role: "admin", user: { email: "admin@example.com" } },
+                    { userId: targetUserId, role: "employee", user: { email: targetUserEmail } }
+                ],
+                _count: { members: 1 }
+            })) as any;
+
+            prisma.membership.delete = mock(() => Promise.resolve({})) as any;
+            prisma.boards.findMany = mock(() => Promise.resolve([
+                { id: "board-111" },
+                { id: "board-222" }
+            ])) as any;
+
+            let evictUserArgs: any = null;
+            wsBroadcaster.evictUser = mock((uid: string, orgId?: string, boardIds?: string[]) => {
+                evictUserArgs = { uid, orgId, boardIds };
+                return Promise.resolve(true);
+            }) as any;
+            wsBroadcaster.broadcast = mock(() => Promise.resolve(true)) as any;
+
+            const req: any = {
+                id: userId,
+                params: { orgId: validOrgId },
+                body: { email: targetUserEmail }
+            };
+            const res = createMockRes();
+
+            await deleteUserHandler(req, res);
+
+            expect(res.statusCode).toBe(200);
+            expect(evictUserArgs).not.toBeNull();
+            expect(evictUserArgs.uid).toBe(targetUserId);
+            expect(evictUserArgs.orgId).toBe(validOrgId);
+            expect(evictUserArgs.boardIds).toEqual(["board-111", "board-222"]);
+
+            prisma.orgs.findUnique = origOrgFind;
+            prisma.membership.delete = origMemberDelete;
+            prisma.boards.findMany = origBoardsFind;
+            wsBroadcaster.evictUser = origEvictUser;
+            wsBroadcaster.broadcast = origBroadcast;
+        });
+    });
+
+    describe("Deterministic Query Ordering with Compound Sort Criteria", () => {
+        it("getaBoard queries sections and issues with position and secondary tie-breakers", async () => {
+            const origBoardFind = prisma.boards.findUnique;
+            const origMemberFind = prisma.membership.findUnique;
+
+            let queryArgs: any = null;
+            prisma.boards.findUnique = mock((args: any) => {
+                queryArgs = args;
+                return Promise.resolve({
+                    id: validBoardId,
+                    title: "Test Board",
+                    orgId: validOrgId,
+                    section: []
+                });
+            }) as any;
+
+            prisma.membership.findUnique = mock(() => Promise.resolve({
+                role: "admin",
+                accepted: true
+            })) as any;
+
+            const req: any = {
+                id: userId,
+                params: { boardId: validBoardId }
+            };
+            const res = createMockRes();
+
+            await getBoardDetails(req, res);
+
+            expect(res.statusCode).toBe(200);
+            expect(queryArgs.select.section.orderBy).toEqual([
+                { position: "asc" },
+                { createdAt: "asc" },
+                { id: "asc" }
+            ]);
+            expect(queryArgs.select.section.select.issues.orderBy).toEqual([
+                { position: "asc" },
+                { createdAt: "asc" },
+                { id: "asc" }
+            ]);
+
+            prisma.boards.findUnique = origBoardFind;
+            prisma.membership.findUnique = origMemberFind;
+        });
+
+        it("getAllSections queries sections with position and secondary tie-breakers", async () => {
+            const origBoardFind = prisma.boards.findUnique;
+
+            let queryArgs: any = null;
+            prisma.boards.findUnique = mock((args: any) => {
+                queryArgs = args;
+                return Promise.resolve({
+                    id: validBoardId,
+                    section: [],
+                    org: { members: [{ id: "m-1" }] }
+                });
+            }) as any;
+
+            const req: any = {
+                id: userId,
+                params: { boardId: validBoardId }
+            };
+            const res = createMockRes();
+
+            await getAllSections(req, res);
+
+            expect(res.statusCode).toBe(200);
+            expect(queryArgs.select.section.orderBy).toEqual([
+                { position: "asc" },
+                { createdAt: "asc" },
+                { id: "asc" }
+            ]);
+
+            prisma.boards.findUnique = origBoardFind;
+        });
+
+        it("getAllIssues queries issues with position and secondary tie-breakers", async () => {
+            const origSectionFind = prisma.sections.findUnique;
+
+            let queryArgs: any = null;
+            prisma.sections.findUnique = mock((args: any) => {
+                queryArgs = args;
+                return Promise.resolve({
+                    title: "Backlog",
+                    issues: [],
+                    board: { org: { members: [{ id: "m-1" }] } }
+                });
+            }) as any;
+
+            const req: any = {
+                id: userId,
+                params: { sectionId: validSectionId }
+            };
+            const res = createMockRes();
+
+            await getAllIssues(req, res);
+
+            expect(res.statusCode).toBe(200);
+            expect(queryArgs.select.issues.orderBy).toEqual([
+                { position: "asc" },
+                { createdAt: "asc" },
+                { id: "asc" }
+            ]);
+
+            prisma.sections.findUnique = origSectionFind;
         });
     });
 });

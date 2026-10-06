@@ -21,9 +21,11 @@ export async function getAllIssues(req: Request, res: Response)
         select: {
             title: true,
             issues: {
-                orderBy: {
-                    position: "asc"
-                },
+                orderBy: [
+                    { position: "asc" },
+                    { createdAt: "asc" },
+                    { id: "asc" }
+                ],
                 select: {
                     id: true,
                     title: true,

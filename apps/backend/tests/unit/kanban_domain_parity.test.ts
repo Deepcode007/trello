@@ -75,6 +75,54 @@ describe("Kanban Domain Parity & Event Sourcing Suite", () => {
             prisma.boards.findUnique = origBoardFind;
             prisma.board_events.findMany = origEventsFind;
         });
+
+        it("records board events with monotonic sequence numbers", async () => {
+            const origFindFirst = prisma.board_events.findFirst;
+            const origCreate = prisma.board_events.create;
+
+            let currentSeq = 10n;
+            prisma.board_events.findFirst = mock(() => Promise.resolve({ sequence: currentSeq })) as any;
+            prisma.board_events.create = mock((args: any) => Promise.resolve({
+                id: "new-evt-id",
+                sequence: args.data.sequence
+            })) as any;
+
+            const rec = await wsBroadcaster.recordBoardEvent(validBoardId, "card:created", { cardId: "c-1" });
+            expect(rec).not.toBeNull();
+            expect(rec?.sequence).toBe(11n);
+            expect(prisma.board_events.create).toHaveBeenCalled();
+
+            prisma.board_events.findFirst = origFindFirst;
+            prisma.board_events.create = origCreate;
+        });
+
+        it("broadcasts event and attaches sequence number from recorded event", async () => {
+            const origFindFirst = prisma.board_events.findFirst;
+            const origCreate = prisma.board_events.create;
+
+            prisma.board_events.findFirst = mock(() => Promise.resolve({ sequence: 5n })) as any;
+            prisma.board_events.create = mock((args: any) => Promise.resolve({
+                id: "evt-uuid-5",
+                sequence: args.data.sequence
+            })) as any;
+
+            let receivedEvent: any = null;
+            const listener = (data: any) => { receivedEvent = data; };
+            wsBroadcaster.on(`board:${validBoardId}`, listener);
+
+            await wsBroadcaster.broadcast(validBoardId, {
+                type: "card:moved",
+                payload: { cardId: "c-1", position: 1000 }
+            });
+
+            expect(receivedEvent).not.toBeNull();
+            expect(receivedEvent.sequence).toBe("6");
+            expect(receivedEvent.eventId).toBe("evt-uuid-5");
+
+            wsBroadcaster.off(`board:${validBoardId}`, listener);
+            prisma.board_events.findFirst = origFindFirst;
+            prisma.board_events.create = origCreate;
+        });
     });
 
     describe("Labels Management", () => {

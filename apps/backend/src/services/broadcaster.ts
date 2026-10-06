@@ -1,4 +1,5 @@
 import { EventEmitter } from "node:events";
+import { prisma } from "db/prisma";
 
 const GLOBAL_BROADCASTER_KEY = Symbol.for("trello.ws.broadcaster");
 
@@ -42,6 +43,12 @@ export function formatBoardTopic(boardId: string): string {
     if (!boardId || typeof boardId !== "string" || !boardId.trim()) return "";
     const trimmed = boardId.trim();
     return trimmed.startsWith("board_") ? trimmed : `board_${trimmed}`;
+}
+
+export function cleanBoardId(topicOrBoardId: string): string {
+    if (!topicOrBoardId || typeof topicOrBoardId !== "string" || !topicOrBoardId.trim()) return "";
+    const trimmed = topicOrBoardId.trim();
+    return trimmed.startsWith("board_") ? trimmed.slice(6) : trimmed;
 }
 
 export class WebSocketBroadcaster extends EventEmitter {
@@ -93,6 +100,49 @@ export class WebSocketBroadcaster extends EventEmitter {
         return 0;
     }
 
+    public async recordBoardEvent(
+        boardId: string,
+        eventType: string,
+        payload: unknown
+    ): Promise<{ id: string; sequence: bigint } | null> {
+        const rawBoardId = cleanBoardId(boardId);
+        if (!rawBoardId) return null;
+
+        for (let attempt = 0; attempt < 3; attempt++) {
+            try {
+                const lastEvent = await prisma.board_events.findFirst({
+                    where: { boardId: rawBoardId },
+                    orderBy: { sequence: "desc" },
+                    select: { sequence: true }
+                });
+                const nextSeq = (lastEvent?.sequence ?? 0n) + 1n;
+
+                const record = await prisma.board_events.create({
+                    data: {
+                        boardId: rawBoardId,
+                        sequence: nextSeq,
+                        eventType,
+                        payload: (payload ?? {}) as any,
+                        published: true,
+                        publishedAt: new Date()
+                    },
+                    select: {
+                        id: true,
+                        sequence: true
+                    }
+                });
+                return record;
+            } catch (err: any) {
+                // Retry if concurrent write resulted in duplicate sequence
+                if (err?.code === "P2002" && attempt < 2) {
+                    continue;
+                }
+                return null;
+            }
+        }
+        return null;
+    }
+
     public async broadcast<T = unknown>(boardId: string, event: BroadcastEvent<T> | string): Promise<boolean> {
         if (!boardId || typeof boardId !== "string") return false;
 
@@ -115,6 +165,18 @@ export class WebSocketBroadcaster extends EventEmitter {
                 timestamp: event.timestamp ?? Date.now()
             };
             payloadStr = JSON.stringify(eventObj);
+        }
+
+        // Persist event into board_events outbox table if not a system/ping heartbeat
+        if (eventObj.type !== "ping" && eventObj.type !== "pong") {
+            try {
+                const recorded = await this.recordBoardEvent(boardId, eventObj.type, eventObj.payload);
+                if (recorded) {
+                    (eventObj as any).sequence = recorded.sequence.toString();
+                    (eventObj as any).eventId = recorded.id;
+                    payloadStr = JSON.stringify(eventObj);
+                }
+            } catch {}
         }
 
         // Always emit on local EventEmitter for in-process listeners
@@ -151,8 +213,8 @@ export class WebSocketBroadcaster extends EventEmitter {
         }
     }
 
-    public async evictUser(userId: string, orgId?: string): Promise<boolean> {
-        this.emit("evictUser", { userId, orgId });
+    public async evictUser(userId: string, orgId?: string, boardIds?: string[]): Promise<boolean> {
+        this.emit("evictUser", { userId, orgId, boardIds });
         try {
             const endpoint = `http://127.0.0.1:${this.wsPort}/internal/evict-user`;
             const internalSecret = process.env.INTERNAL_BROADCAST_SECRET || process.env.jwt_key || process.env.JWT_SECRET || "";
@@ -162,7 +224,12 @@ export class WebSocketBroadcaster extends EventEmitter {
             const res = await fetch(endpoint, {
                 method: "POST",
                 headers,
-                body: JSON.stringify({ userId, orgId, reason: "FORBIDDEN_REVOKED: Organization membership terminated" }),
+                body: JSON.stringify({
+                    userId,
+                    orgId,
+                    boardIds,
+                    reason: "FORBIDDEN_REVOKED: Organization membership terminated"
+                }),
                 signal: AbortSignal.timeout(1000)
             });
             return res.ok;

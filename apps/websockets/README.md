@@ -26,7 +26,7 @@ jwt_key="your-super-secret-jwt-key"
 | Variable | Default | Description |
 | :--- | :--- | :--- |
 | `ws_port` / `WS_PORT` | `3001` | Port on which the WebSocket server listens |
-| `jwt_key` / `JWT_SECRET` | `"asdas"` | Shared secret key for JWT verification and IPC broadcast authentication |
+| `jwt_key` / `JWT_SECRET` | Shared secret key for JWT verification and IPC broadcast authentication |
 
 > [!IMPORTANT]
 > `jwt_key` must match the secret configured in `apps/backend/.env` to ensure valid token decoding and authenticated inter-process broadcasts.

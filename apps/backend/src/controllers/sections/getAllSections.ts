@@ -20,9 +20,11 @@ export async function getAllSections(req: Request, res: Response)
         },
         select: {
             section: {
-                orderBy: {
-                    position: "asc"
-                },
+                orderBy: [
+                    { position: "asc" },
+                    { createdAt: "asc" },
+                    { id: "asc" }
+                ],
                 select: {
                     id: true,
                     title: true,

@@ -1,5 +1,6 @@
 import { EventEmitter } from "node:events";
 import type { Server } from "bun";
+import { prisma } from "db/prisma";
 import {
     type WebSocketData,
     type BroadcastEvent,
@@ -8,7 +9,8 @@ import {
     type CardUpdatedPayload,
     type CardDeletedPayload,
     type ListReorderedPayload,
-    formatBoardTopic
+    formatBoardTopic,
+    cleanBoardId
 } from "../types/events";
 
 const GLOBAL_BROADCASTER_KEY = Symbol.for("trello.ws.broadcaster");
@@ -62,6 +64,48 @@ export class WebSocketBroadcaster extends EventEmitter {
         return 0;
     }
 
+    public async recordBoardEvent(
+        boardId: string,
+        eventType: string,
+        payload: unknown
+    ): Promise<{ id: string; sequence: bigint } | null> {
+        const rawBoardId = cleanBoardId(boardId);
+        if (!rawBoardId) return null;
+
+        for (let attempt = 0; attempt < 3; attempt++) {
+            try {
+                const lastEvent = await prisma.board_events.findFirst({
+                    where: { boardId: rawBoardId },
+                    orderBy: { sequence: "desc" },
+                    select: { sequence: true }
+                });
+                const nextSeq = (lastEvent?.sequence ?? 0n) + 1n;
+
+                const record = await prisma.board_events.create({
+                    data: {
+                        boardId: rawBoardId,
+                        sequence: nextSeq,
+                        eventType,
+                        payload: (payload ?? {}) as any,
+                        published: true,
+                        publishedAt: new Date()
+                    },
+                    select: {
+                        id: true,
+                        sequence: true
+                    }
+                });
+                return record;
+            } catch (err: any) {
+                if (err?.code === "P2002" && attempt < 2) {
+                    continue;
+                }
+                return null;
+            }
+        }
+        return null;
+    }
+
     public async broadcast<T = unknown>(boardId: string, event: BroadcastEvent<T> | string): Promise<boolean> {
         if (!boardId || typeof boardId !== "string") return false;
 
@@ -84,6 +128,18 @@ export class WebSocketBroadcaster extends EventEmitter {
                 timestamp: event.timestamp ?? Date.now()
             };
             payloadStr = JSON.stringify(eventObj);
+        }
+
+        // Persist event into board_events outbox table if not a system/ping heartbeat
+        if (eventObj.type !== "ping" && eventObj.type !== "pong") {
+            try {
+                const recorded = await this.recordBoardEvent(boardId, eventObj.type, eventObj.payload);
+                if (recorded) {
+                    (eventObj as any).sequence = recorded.sequence.toString();
+                    (eventObj as any).eventId = recorded.id;
+                    payloadStr = JSON.stringify(eventObj);
+                }
+            } catch {}
         }
 
         // Always emit on local EventEmitter for in-process listeners

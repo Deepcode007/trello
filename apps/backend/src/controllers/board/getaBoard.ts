@@ -22,14 +22,18 @@ export async function getBoardDetails(req: Request, res: Response)
             color: true,
             isArchived: true,
             section: {
-                orderBy: {
-                    position: "asc"
-                },
+                orderBy: [
+                    { position: "asc" },
+                    { createdAt: "asc" },
+                    { id: "asc" }
+                ],
                 select: {
                     issues: {
-                        orderBy: {
-                            position: "asc"
-                        }
+                        orderBy: [
+                            { position: "asc" },
+                            { createdAt: "asc" },
+                            { id: "asc" }
+                        ]
                     },
                     title: true,
                     id: true,

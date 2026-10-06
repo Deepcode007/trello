@@ -79,6 +79,8 @@ export async function deleteUserHandler(req: Request, res: Response)
         select: { id: true }
     });
 
+    const boardIds = orgBoards.map(b => b.id);
+
     for (const b of orgBoards) {
         wsBroadcaster.broadcast(b.id, {
             type: "board:member_evicted",
@@ -90,8 +92,8 @@ export async function deleteUserHandler(req: Request, res: Response)
         });
     }
 
-    // Layer 2: Forcibly terminate evicted user's active WebSocket connections
-    await wsBroadcaster.evictUser(user_found.userId, result.data.orgId);
+    // Layer 2: Forcibly terminate evicted user's active WebSocket connections for this organization
+    await wsBroadcaster.evictUser(user_found.userId, result.data.orgId, boardIds);
 
     return res.status(200).json({
         success: true,
