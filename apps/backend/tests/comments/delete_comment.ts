@@ -128,7 +128,7 @@ export function delete_comment_test()
             method: "DELETE",
             headers: { "Content-Type": "application/json", authorization: `Bearer ${authorToken}` }
         });
-        expect(delRes.status).toBe(201);
+        expect(delRes.status).toBe(200);
         const delBody = await delRes.json() as { success: boolean; data: string };
         expect(delBody.success).toBe(true);
         expect(delBody.data).toBe(commentId);
@@ -148,7 +148,7 @@ export function delete_comment_test()
             method: "DELETE",
             headers: { "Content-Type": "application/json", authorization: `Bearer ${adminToken}` }
         });
-        expect(delRes.status).toBe(201);
+        expect(delRes.status).toBe(200);
         const delBody = await delRes.json() as { success: boolean; data: string };
         expect(delBody.success).toBe(true);
         expect(delBody.data).toBe(commentId);

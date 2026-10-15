@@ -123,7 +123,7 @@ export function edit_comment_test()
             headers: { "Content-Type": "application/json", authorization: `Bearer ${authorToken}` },
             body: JSON.stringify({ description: newDesc })
         });
-        expect(res.status).toBe(201);
+        expect(res.status).toBe(200);
         const body = await res.json() as {
             success: boolean;
             data: { id: string; description: string };

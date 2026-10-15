@@ -70,7 +70,7 @@ export async function editComment(req: Request, res: Response)
         payload: { comment: updated, commentId: updated.id, boardId: comment.issue.board.id }
     });
 
-    return res.status(201).json({
+    return res.status(200).json({
         success: true,
         data: updated
     })

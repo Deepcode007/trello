@@ -8,6 +8,7 @@ import { updateRoleHandler } from "../../src/controllers/organisation/updateRole
 import { UpdateOrgHandler } from "../../src/controllers/organisation/updateDetails";
 import { inviteUserHandler } from "../../src/controllers/organisation/addUser";
 import { deleteComment } from "../../src/controllers/comments/deleteComment";
+import { editComment } from "../../src/controllers/comments/editComment";
 import { updateBoard } from "../../src/controllers/board/updateBoard";
 import { deleteBoard } from "../../src/controllers/board/deleteBoard";
 import { addComment } from "../../src/controllers/comments/addComment";
@@ -474,9 +475,51 @@ describe("Empirical Challenger Verification Suite", () =>
             const res = createMockRes();
 
             await deleteComment(req, res);
-            expect(res.statusCode).toBe(201);
+            expect(res.statusCode).toBe(200);
             expect(res.body.data).toBe(validCommentId);
 
+            wsBroadcaster.broadcast = origBroadcast;
+        });
+
+        it("editComment: author can edit comment and receives HTTP 200 OK", async () =>
+        {
+            const origCommentUpdate = prisma.comments.update;
+            const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+            prisma.comments.findUnique = mock(() => Promise.resolve({
+                id: validCommentId,
+                createdAt: oneHourAgo,
+                userId: normalUserId,
+                issue: {
+                    board: {
+                        id: validBoardId,
+                        org: {
+                            members: [{ role: "employee", userId: normalUserId }]
+                        }
+                    }
+                }
+            })) as any;
+
+            prisma.comments.update = mock(() => Promise.resolve({
+                id: validCommentId,
+                description: "Updated description text"
+            })) as any;
+
+            const origBroadcast = wsBroadcaster.broadcast;
+            wsBroadcaster.broadcast = mock(() => Promise.resolve(true)) as any;
+
+            const req: any = {
+                id: normalUserId,
+                params: { commentId: validCommentId },
+                body: { description: "Updated description text" }
+            };
+            const res = createMockRes();
+
+            await editComment(req, res);
+            expect(res.statusCode).toBe(200);
+            expect(res.body.success).toBe(true);
+            expect(res.body.data.description).toBe("Updated description text");
+
+            prisma.comments.update = origCommentUpdate;
             wsBroadcaster.broadcast = origBroadcast;
         });
     });

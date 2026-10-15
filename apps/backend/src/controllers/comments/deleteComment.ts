@@ -88,7 +88,7 @@ export async function deleteComment(req: Request, res: Response)
         payload: { commentId: deleted.id, issueId: comment.issue.id, boardId: comment.issue.board.id }
     });
 
-    return res.status(201).json({
+    return res.status(200).json({
         success: true,
         data: deleted.id
     })
