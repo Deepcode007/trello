@@ -5,9 +5,12 @@ export interface WebSocketData
     name?: string;
     subscriptions: Set<string>;
     connectedAt: number;
+    isAlive?: boolean;
+    lastPing?: number;
+    lastPong?: number;
 }
 
-export type ClientAction = "join" | "leave" | "ping" | "subscribe" | "unsubscribe";
+export type ClientAction = "join" | "leave" | "ping" | "pong" | "heartbeat" | "heartbeat_ack" | "subscribe" | "unsubscribe";
 
 export interface ClientMessage
 {

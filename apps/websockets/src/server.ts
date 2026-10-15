@@ -59,6 +59,9 @@ export interface WebSocketServerOptions
     jwtSecret?: string;
     hostname?: string;
     checkAccess?: BoardAccessChecker;
+    idleTimeout?: number;
+    sendPings?: boolean;
+    heartbeatInterval?: number;
 }
 
 // Layer 2 In-Memory Connection Registry: maps authenticated userId to active sockets
@@ -347,7 +350,10 @@ export function handleUpgradeRequest(
             email: user.email,
             name: user.name,
             subscriptions: new Set<string>(),
-            connectedAt: Date.now()
+            connectedAt: Date.now(),
+            isAlive: true,
+            lastPing: Date.now(),
+            lastPong: Date.now()
         },
         headers: subprotocol ? { "Sec-WebSocket-Protocol": subprotocol } : undefined
     });
@@ -372,6 +378,11 @@ export async function handleWebSocketMessage(
 ): Promise<void>
 {
     let msg: ClientMessage;
+    if (ws?.data)
+    {
+        ws.data.isAlive = true;
+        ws.data.lastPong = Date.now();
+    }
     if (!ws?.data?.subscriptions)
     {
         try
@@ -525,9 +536,21 @@ export async function handleWebSocketMessage(
             timestamp: Date.now()
         });
         server.publish(topic, leaveEvent);
-    } else if (action === "ping")
+    } else if (action === "ping" || action === "heartbeat")
     {
+        if (ws?.data)
+        {
+            ws.data.isAlive = true;
+            ws.data.lastPing = Date.now();
+        }
         ws.send(JSON.stringify({ type: "pong", timestamp: Date.now() }));
+    } else if (action === "pong" || action === "heartbeat_ack")
+    {
+        if (ws?.data)
+        {
+            ws.data.isAlive = true;
+            ws.data.lastPong = Date.now();
+        }
     } else
     {
         ws.send(JSON.stringify({ error: `Unknown action: ${action}` }));
@@ -586,6 +609,110 @@ export function handleWebSocketClose(
     }
 }
 
+const serverHeartbeatTimers = new Map<Server<WebSocketData> | object, ReturnType<typeof setInterval>>();
+
+export function checkHeartbeats(
+    server: Pick<Server<WebSocketData>, "publish">
+): { deadSocketsTerminated: number; pingsSent: number }
+{
+    let deadSocketsTerminated = 0;
+    let pingsSent = 0;
+
+    for (const [userId, sockets] of Array.from(userSocketRegistry.entries()))
+    {
+        const socketsToTerminate: ServerWebSocket<WebSocketData>[] = [];
+
+        for (const ws of Array.from(sockets))
+        {
+            if (!ws) continue;
+
+            if (ws.data && ws.data.isAlive === false)
+            {
+                socketsToTerminate.push(ws);
+            } else
+            {
+                if (ws.data)
+                {
+                    ws.data.isAlive = false;
+                    ws.data.lastPing = Date.now();
+                }
+                try
+                {
+                    if (typeof ws.ping === "function")
+                    {
+                        ws.ping();
+                    }
+                } catch { }
+                pingsSent++;
+            }
+        }
+
+        for (const ws of socketsToTerminate)
+        {
+            deadSocketsTerminated++;
+            try
+            {
+                handleWebSocketClose(ws, server, 1001, "Zombie connection: heartbeat timeout");
+            } catch { }
+
+            try
+            {
+                if (typeof ws.terminate === "function")
+                {
+                    ws.terminate();
+                } else if (typeof ws.close === "function")
+                {
+                    ws.close(1001, "Zombie connection: heartbeat timeout");
+                }
+            } catch { }
+        }
+    }
+
+    return { deadSocketsTerminated, pingsSent };
+}
+
+export function startHeartbeat(
+    server: Pick<Server<WebSocketData>, "publish"> & Partial<Pick<Server<WebSocketData>, "stop">>,
+    intervalMs: number = 30000
+): ReturnType<typeof setInterval> | null
+{
+    stopHeartbeat(server);
+    if (!intervalMs || intervalMs <= 0) return null;
+
+    const timer = setInterval(() =>
+    {
+        checkHeartbeats(server);
+    }, intervalMs);
+
+    if (typeof timer.unref === "function")
+    {
+        timer.unref();
+    }
+
+    serverHeartbeatTimers.set(server, timer);
+    return timer;
+}
+
+export function stopHeartbeat(server?: Pick<Server<WebSocketData>, "publish"> | object): void
+{
+    if (server)
+    {
+        const timer = serverHeartbeatTimers.get(server);
+        if (timer)
+        {
+            clearInterval(timer);
+            serverHeartbeatTimers.delete(server);
+        }
+    } else
+    {
+        for (const [srv, timer] of serverHeartbeatTimers.entries())
+        {
+            clearInterval(timer);
+        }
+        serverHeartbeatTimers.clear();
+    }
+}
+
 export function createWebSocketServer(options: WebSocketServerOptions = {}): Server<WebSocketData>
 {
     const port = options.port ?? Number(process.env.ws_port || process.env.WS_PORT || 3001);
@@ -597,6 +724,12 @@ export function createWebSocketServer(options: WebSocketServerOptions = {}): Ser
     const hostname = options.hostname ?? "0.0.0.0";
     const checker = options.checkAccess ?? activeBoardAccessChecker;
 
+    const idleTimeout = options.idleTimeout ?? (process.env.WS_IDLE_TIMEOUT ? Number(process.env.WS_IDLE_TIMEOUT) : 60);
+    const sendPings = options.sendPings ?? true;
+    const heartbeatInterval = options.heartbeatInterval !== undefined
+        ? options.heartbeatInterval
+        : (process.env.WS_HEARTBEAT_INTERVAL !== undefined ? Number(process.env.WS_HEARTBEAT_INTERVAL) : 30000);
+
     const server = Bun.serve<WebSocketData>({
         port,
         hostname,
@@ -605,8 +738,15 @@ export function createWebSocketServer(options: WebSocketServerOptions = {}): Ser
             return handleUpgradeRequest(req, server, jwtSecret);
         },
         websocket: {
+            idleTimeout,
+            sendPings,
             open(ws: ServerWebSocket<WebSocketData>)
             {
+                if (ws.data)
+                {
+                    ws.data.isAlive = true;
+                    ws.data.lastPong = Date.now();
+                }
                 if (ws.data?.userId)
                 {
                     let set = userSocketRegistry.get(ws.data.userId);
@@ -620,7 +760,27 @@ export function createWebSocketServer(options: WebSocketServerOptions = {}): Ser
             },
             async message(ws: ServerWebSocket<WebSocketData>, rawMessage: string | Buffer)
             {
+                if (ws.data)
+                {
+                    ws.data.isAlive = true;
+                    ws.data.lastPong = Date.now();
+                }
                 await handleWebSocketMessage(ws, server, rawMessage, checker);
+            },
+            ping(ws: ServerWebSocket<WebSocketData>, _data: Buffer)
+            {
+                if (ws.data)
+                {
+                    ws.data.isAlive = true;
+                }
+            },
+            pong(ws: ServerWebSocket<WebSocketData>, _data: Buffer)
+            {
+                if (ws.data)
+                {
+                    ws.data.isAlive = true;
+                    ws.data.lastPong = Date.now();
+                }
             },
             close(ws: ServerWebSocket<WebSocketData>, code: number, reason: string)
             {
@@ -628,6 +788,17 @@ export function createWebSocketServer(options: WebSocketServerOptions = {}): Ser
             }
         }
     });
+
+    if (heartbeatInterval > 0)
+    {
+        startHeartbeat(server, heartbeatInterval);
+        const origStop = server.stop.bind(server);
+        server.stop = (closeActiveConnections?: boolean) =>
+        {
+            stopHeartbeat(server);
+            return origStop(closeActiveConnections);
+        };
+    }
 
     // Register with singleton broadcaster
     wsBroadcaster.setServer(server);
