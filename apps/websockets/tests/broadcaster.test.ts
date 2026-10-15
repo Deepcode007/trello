@@ -411,7 +411,7 @@ describe("WebSocketBroadcaster Service Integration Tests", () =>
         });
     });
 
-    describe("recordBoardEvent persistence and P2002 retry handling", () =>
+    describe("recordBoardEvent persistence and transaction-level advisory locking", () =>
     {
         it("returns null immediately for invalid or empty boardId", async () =>
         {
@@ -421,85 +421,101 @@ describe("WebSocketBroadcaster Service Integration Tests", () =>
             expect(await broadcaster.recordBoardEvent(null as any, "card:created", {})).toBeNull();
         });
 
-        it("records board event with incremented sequence when findFirst succeeds", async () =>
+        it("records board event with incremented sequence inside transaction with advisory lock", async () =>
         {
             const broadcaster = new WebSocketBroadcaster();
-            const origFindFirst = prisma.board_events.findFirst;
-            const origCreate = prisma.board_events.create;
+            const origTransaction = prisma.$transaction;
 
-            prisma.board_events.findFirst = mock(() => Promise.resolve({ sequence: 7n })) as any;
-            prisma.board_events.create = mock((args: any) => Promise.resolve({
-                id: "evt-rec-1",
-                sequence: args.data.sequence
-            })) as any;
+            let currentSeq = 7n;
+            let capturedData: any = null;
+            let advisoryLockCalled = false;
+
+            prisma.$transaction = mock(async (fn: any) =>
+            {
+                const tx = {
+                    $executeRaw: mock(() =>
+                    {
+                        advisoryLockCalled = true;
+                        return Promise.resolve();
+                    }),
+                    board_events: {
+                        findFirst: mock(() => Promise.resolve({ sequence: currentSeq })),
+                        create: mock((args: any) =>
+                        {
+                            capturedData = args.data;
+                            return Promise.resolve({
+                                id: "evt-rec-1",
+                                sequence: args.data.sequence
+                            });
+                        })
+                    }
+                };
+                return fn(tx);
+            }) as any;
 
             const rec = await broadcaster.recordBoardEvent("board_123", "card:updated", { cardId: "c1" });
             expect(rec).not.toBeNull();
             expect(rec?.sequence).toBe(8n);
             expect(rec?.id).toBe("evt-rec-1");
+            expect(advisoryLockCalled).toBe(true);
+            expect(capturedData.boardId).toBe("123");
+            expect(capturedData.sequence).toBe(8n);
+            expect(capturedData.eventType).toBe("card:updated");
 
-            prisma.board_events.findFirst = origFindFirst;
-            prisma.board_events.create = origCreate;
+            prisma.$transaction = origTransaction;
         });
 
-        it("retries on P2002 unique constraint conflict and succeeds on next attempt", async () =>
+        it("broadcast attaches sequence and eventId from recorded board event", async () =>
         {
             const broadcaster = new WebSocketBroadcaster();
-            const origFindFirst = prisma.board_events.findFirst;
-            const origCreate = prisma.board_events.create;
+            const origTransaction = prisma.$transaction;
 
-            let attempt = 0;
-            prisma.board_events.findFirst = mock(() =>
+            prisma.$transaction = mock(async (fn: any) =>
             {
-                attempt++;
-                return Promise.resolve({ sequence: BigInt(attempt * 5) });
+                const tx = {
+                    $executeRaw: mock(() => Promise.resolve()),
+                    board_events: {
+                        findFirst: mock(() => Promise.resolve({ sequence: 5n })),
+                        create: mock((args: any) => Promise.resolve({
+                            id: "evt-uuid-5",
+                            sequence: args.data.sequence
+                        }))
+                    }
+                };
+                return fn(tx);
             }) as any;
 
-            let createCalls = 0;
-            prisma.board_events.create = mock((args: any) =>
-            {
-                createCalls++;
-                if (createCalls === 1)
-                {
-                    const p2002Error: any = new Error("Unique constraint violation");
-                    p2002Error.code = "P2002";
-                    return Promise.reject(p2002Error);
-                }
-                return Promise.resolve({
-                    id: "evt-retried-ok",
-                    sequence: args.data.sequence
-                });
-            }) as any;
+            let receivedEvent: any = null;
+            const listener = (data: any) => { receivedEvent = data; };
+            broadcaster.on("board:board_ws_rec_test", listener);
 
-            const rec = await broadcaster.recordBoardEvent("board_123", "card:created", { cardId: "c2" });
-            expect(rec).not.toBeNull();
-            expect(rec?.id).toBe("evt-retried-ok");
-            expect(createCalls).toBe(2);
+            await broadcaster.broadcast("board_ws_rec_test", {
+                type: "card:moved",
+                payload: { cardId: "c-rec", position: 1500 }
+            });
 
-            prisma.board_events.findFirst = origFindFirst;
-            prisma.board_events.create = origCreate;
+            expect(receivedEvent).not.toBeNull();
+            expect(receivedEvent.sequence).toBe("6");
+            expect(receivedEvent.eventId).toBe("evt-uuid-5");
+
+            broadcaster.off("board:board_ws_rec_test", listener);
+            prisma.$transaction = origTransaction;
         });
 
-        it("returns null when all 3 attempts fail with P2002", async () =>
+        it("returns null when transaction fails", async () =>
         {
             const broadcaster = new WebSocketBroadcaster();
-            const origFindFirst = prisma.board_events.findFirst;
-            const origCreate = prisma.board_events.create;
+            const origTransaction = prisma.$transaction;
 
-            prisma.board_events.findFirst = mock(() => Promise.resolve({ sequence: 10n })) as any;
-            prisma.board_events.create = mock(() =>
+            prisma.$transaction = mock(async () =>
             {
-                const p2002Error: any = new Error("Unique constraint violation");
-                p2002Error.code = "P2002";
-                return Promise.reject(p2002Error);
+                throw new Error("Advisory lock acquisition or transaction failure");
             }) as any;
 
             const rec = await broadcaster.recordBoardEvent("board_123", "card:created", { cardId: "c3" });
             expect(rec).toBeNull();
-            expect(prisma.board_events.create).toHaveBeenCalledTimes(3);
 
-            prisma.board_events.findFirst = origFindFirst;
-            prisma.board_events.create = origCreate;
+            prisma.$transaction = origTransaction;
         });
     });
 });

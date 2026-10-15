@@ -104,42 +104,29 @@ export class WebSocketBroadcaster extends EventEmitter
         const rawBoardId = cleanBoardId(boardId);
         if (!rawBoardId) return null;
 
-        for (let attempt = 0; attempt < 3; attempt++)
+        // Locking a boardid for 1-3ms to avoid sequence duplication
+        return prisma.$transaction(async (tx) =>
         {
-            try
-            {
-                const lastEvent = await prisma.board_events.findFirst({
-                    where: { boardId: rawBoardId },
-                    orderBy: { sequence: "desc" },
-                    select: { sequence: true }
-                });
-                const nextSeq = (lastEvent?.sequence ?? 0n) + 1n;
+            await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${rawBoardId}))`;
 
-                const record = await prisma.board_events.create({
-                    data: {
-                        boardId: rawBoardId,
-                        sequence: nextSeq,
-                        eventType,
-                        payload: (payload ?? {}) as any,
-                        published: true,
-                        publishedAt: new Date()
-                    },
-                    select: {
-                        id: true,
-                        sequence: true
-                    }
-                });
-                return record;
-            } catch (err: any)
-            {
-                if (err?.code === "P2002" && attempt < 2)
-                {
-                    continue;
-                }
-                return null;
-            }
-        }
-        return null;
+            const lastEvent = await tx.board_events.findFirst({
+                where: { boardId: rawBoardId },
+                orderBy: { sequence: "desc" },
+                select: { sequence: true }
+            });
+
+            return tx.board_events.create({
+                data: {
+                    boardId: rawBoardId,
+                    sequence: (lastEvent?.sequence ?? 0n) + 1n,
+                    eventType,
+                    payload: (payload ?? {}) as any,
+                    published: true,
+                    publishedAt: new Date()
+                },
+                select: { id: true, sequence: true }
+            });
+        }).catch(() => null);
     }
 
     public async broadcast<T = unknown>(boardId: string, event: BroadcastEvent<T> | string): Promise<boolean>
