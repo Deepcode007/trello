@@ -29,7 +29,9 @@ describe("User login flow", () =>
             body: JSON.stringify({ email: `${crypto.randomUUID()}@gmail.com`, password }),
         });
 
-        expect(loginRes.status).toBe(404);
+        expect(loginRes.status).toBe(401);
+        const body = (await loginRes.json()) as any;
+        expect(body.error).toBe("Invalid email or password");
     })
 
     it("does not login when passed wrong password", async () =>
@@ -42,7 +44,7 @@ describe("User login flow", () =>
 
         expect(loginRes.status).toBe(401);
         const body = (await loginRes.json()) as any;
-        expect(body.error).toBe("Invalid Password");
+        expect(body.error).toBe("Invalid email or password");
     })
 
     let token: string;

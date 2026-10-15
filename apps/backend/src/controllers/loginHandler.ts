@@ -5,6 +5,8 @@ import { prisma } from "db/prisma";
 import { SigninSchema } from "../models/signin";
 
 
+const DUMMY_HASH = "$2b$10$Wf1iodB9dPufoIBYBXlkDutPz69kRFHSBnmcFAgQregd56rzG8V.S";
+
 export async function loginHandler(req: Request, res: Response)
 {
     try
@@ -22,22 +24,17 @@ export async function loginHandler(req: Request, res: Response)
             where: {
                 email: result.data.email
             }
-        })
+        });
 
-        if (!user)
-        {
-            return res.status(404).json({
-                success: false,
-                error: "User not found"
-            })
-        }
+        const passwordHash = user ? user.password : DUMMY_HASH;
+        const isPasswordValid = await bcrypt.compare(result.data.password, passwordHash);
 
-        if (!await bcrypt.compare(result.data.password, user.password))
+        if (!user || !isPasswordValid)
         {
             return res.status(401).json({
                 success: false,
-                error: "Invalid Password"
-            })
+                error: "Invalid email or password"
+            });
         }
 
         return res.status(200).json({
