@@ -49,12 +49,14 @@ export async function assignIssue(req: Request, res: Response)
     if (!issue) throw new Not_Found("Issue not found");
     if (issue.board.org.members.length === 0) throw new Forbidden("Admin/Employee only");
 
+    const uniqueEmails = Array.from(new Set(result2.data.email));
+
     const validUsers = await prisma.membership.findMany({
         where: {
             orgId: issue.board.org.id,
             accepted: true,
             user: {
-                email: { in: result2.data.email }
+                email: { in: uniqueEmails }
             }
         },
         select: {
@@ -71,7 +73,7 @@ export async function assignIssue(req: Request, res: Response)
         }
     })
 
-    if (validUsers.length !== result2.data.email.length)
+    if (validUsers.length !== uniqueEmails.length)
     {
         throw new ValidationError("One or more emails invalid or already assigned");
     }
@@ -99,7 +101,7 @@ export async function assignIssue(req: Request, res: Response)
         type: "card:member_assigned",
         payload: {
             issueId: result.data.issueId,
-            assignedUsers: validUsers.map(v => ({ userId: v.userId, email: v.user.email })),
+            assignedUsers: entriesToCreate.map(v => ({ userId: v.userId, email: v.user.email })),
             boardId: issue.board.id
         }
     });

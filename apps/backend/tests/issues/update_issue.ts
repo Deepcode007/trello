@@ -52,7 +52,7 @@ export function update_issue_test()
     it("Fails with 401 when unauthenticated", async () =>
     {
         const res = await fetch(`${globalThis.TEST_BASE_URL}/api/issues/${issueId}`, {
-            method: "PUT",
+            method: "PATCH",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ title: "Updated Title" })
         });
@@ -62,7 +62,7 @@ export function update_issue_test()
     it("Fails with 400 when invalid issueId UUID", async () =>
     {
         const res = await fetch(`${globalThis.TEST_BASE_URL}/api/issues/not-a-uuid`, {
-            method: "PUT",
+            method: "PATCH",
             headers: { "Content-Type": "application/json", authorization: `Bearer ${adminToken}` },
             body: JSON.stringify({ title: "Updated Title" })
         });
@@ -73,7 +73,7 @@ export function update_issue_test()
     {
         const fakeId = crypto.randomUUID();
         const res = await fetch(`${globalThis.TEST_BASE_URL}/api/issues/${fakeId}`, {
-            method: "PUT",
+            method: "PATCH",
             headers: { "Content-Type": "application/json", authorization: `Bearer ${adminToken}` },
             body: JSON.stringify({ title: "Updated Title" })
         });
@@ -83,7 +83,7 @@ export function update_issue_test()
     it("Fails with 403 when user is non-member", async () =>
     {
         const res = await fetch(`${globalThis.TEST_BASE_URL}/api/issues/${issueId}`, {
-            method: "PUT",
+            method: "PATCH",
             headers: { "Content-Type": "application/json", authorization: `Bearer ${nonMemberToken}` },
             body: JSON.stringify({ title: "Updated Title" })
         });
@@ -93,7 +93,7 @@ export function update_issue_test()
     it("Fails with 403 when user is contributor", async () =>
     {
         const res = await fetch(`${globalThis.TEST_BASE_URL}/api/issues/${issueId}`, {
-            method: "PUT",
+            method: "PATCH",
             headers: { "Content-Type": "application/json", authorization: `Bearer ${contributorToken}` },
             body: JSON.stringify({ title: "Updated Title" })
         });
@@ -104,7 +104,7 @@ export function update_issue_test()
     {
         const fakeSectionId = crypto.randomUUID();
         const res = await fetch(`${globalThis.TEST_BASE_URL}/api/issues/${issueId}`, {
-            method: "PUT",
+            method: "PATCH",
             headers: { "Content-Type": "application/json", authorization: `Bearer ${employeeToken}` },
             body: JSON.stringify({ sectionId: fakeSectionId })
         });
@@ -116,7 +116,7 @@ export function update_issue_test()
         const newTitle = `Issue-Updated-${crypto.randomUUID()}`;
         const newUrl = "https://github.com/org/repo/pull/42";
         const res = await fetch(`${globalThis.TEST_BASE_URL}/api/issues/${issueId}`, {
-            method: "PUT",
+            method: "PATCH",
             headers: { "Content-Type": "application/json", authorization: `Bearer ${employeeToken}` },
             body: JSON.stringify({ title: newTitle, gh_url: newUrl })
         });
@@ -133,7 +133,7 @@ export function update_issue_test()
     it("Admin moves issue to a new section successfully", async () =>
     {
         const res = await fetch(`${globalThis.TEST_BASE_URL}/api/issues/${issueId}`, {
-            method: "PUT",
+            method: "PATCH",
             headers: { "Content-Type": "application/json", authorization: `Bearer ${adminToken}` },
             body: JSON.stringify({ sectionId: section2Id })
         });
@@ -151,7 +151,7 @@ export function update_issue_test()
         const otherBoard = await create_boards(adminToken, orgId);
         const otherSection = await create_sections(adminToken, otherBoard!.id);
         const res = await fetch(`${globalThis.TEST_BASE_URL}/api/issues/${issueId}`, {
-            method: "PUT",
+            method: "PATCH",
             headers: { "Content-Type": "application/json", authorization: `Bearer ${adminToken}` },
             body: JSON.stringify({ sectionId: otherSection!.id })
         });
@@ -161,7 +161,7 @@ export function update_issue_test()
     it("Fails with 400 when sectionId is not a UUID", async () =>
     {
         const res = await fetch(`${globalThis.TEST_BASE_URL}/api/issues/${issueId}`, {
-            method: "PUT",
+            method: "PATCH",
             headers: { "Content-Type": "application/json", authorization: `Bearer ${adminToken}` },
             body: JSON.stringify({ sectionId: "not-a-uuid" })
         });
