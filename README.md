@@ -28,37 +28,43 @@ Designed for agile teams and organizations, this platform provides hierarchical 
 
 - **Organization Workspaces**: Create, edit, and manage multiple team workspaces with custom visibility settings.
 - **Role-Based Access Control (RBAC)**: Support for `admin`, `employee`, and `contributor` roles.
-- **Invitation Lifecycle**: Seamless member invitations, role updates, and acceptance flows.
+- **Invitation Lifecycle & Cancellation**: Seamless member invitations, role updates, acceptance flows, and ability for admins to revoke or cancel pending invitations (`DELETE /api/orgs/:orgId/members`).
 
 ### 📊 Kanban Boards & Workflows
 
-- **Dynamic Boards**: Create and organize multiple boards per organization.
+- **Dynamic Boards**: Create, rename (`PUT /api/boards/:boardId`), and organize multiple boards per organization.
 - **Customizable Sections (Columns)**: Build flexible workflow pipelines (e.g., _Backlog_, _In Progress_, _In Review_, _Done_).
+- **Position Offsets & Auto-Spacing**: Section and card positions automatically calculate based on maximum existing offsets (`max(position) + 1000`) to prevent position collisions.
 - **Column Lifecycle & Reordering**: Reorder, rename (`PUT` / `PATCH`), or safely delete sections. Column positions (`position`) are persisted to the database and indexed. Deleting a non-empty section requires specifying a `targetSectionId` on the same board to reassign issues; if a section is the only one remaining on the board and contains issues, deletion is blocked until issues are manually handled.
 
 ### 📝 Issue / Card Management
 
-- **Rich Task Cards**: Create issues with descriptions, metadata, and optional GitHub links (`gh_url`).
-- **Flexible Movement**: Move cards seamlessly across sections or reorder positions within a section (`PATCH /api/cards/:id/move`).
+- **Rich Task Cards**: Create issues with descriptions, metadata, priority levels (`low`, `medium`, `high`, `urgent`), start/due dates, and optional GitHub links (`gh_url`).
+- **Flexible Movement**: Move cards seamlessly across sections or reorder positions within a section (`PATCH /api/cards/:id/move` or `/api/cards/:id`).
 - **RESTful Card Aliases**: Full support for `/api/cards/*` routes alongside `/api/issues/*`.
-- **Team Assignments**: Assign and unassign single or multiple team members to any card (`issue_mapping`).
+- **Deduplicated Team Assignments**: Assign and unassign single or multiple team members to any card (`issue_mapping`) with automatic recipient deduplication.
+- **Labels & Checklists**: Full support for board-scoped labels (`/api/boards/:boardId/labels`, card label attachments) and nested checklists with subtask items (`/api/issues/:issueId/checklists`).
 
 ### ⚡ Real-Time Collaboration & Presence (WebSockets)
 
 - **Native Pub/Sub Engine**: Board-scoped rooms (`board_<boardId>`) using Bun's native high-performance WebSocket publish/subscribe.
-- **Live Event Broadcasting**: Instant updates for card moves, creation, edits, deletions, and column changes.
-- **Presence Tracking**: Real-time `user:joined` and `user:left` events with automatic connection-drop cleanup.
+- **Ordered Event Sourcing & Advisory Locks**: Outbox event recording (`board_events`) using PostgreSQL transaction-level advisory locks (`pg_advisory_xact_lock`) ensuring strictly sequential, non-colliding event numbering across concurrent workers.
+- **Catch-up Sync API**: Clients can query `/api/boards/:boardId/events?sinceSeq=<sequence>` to sync missing events after reconnecting.
+- **Server-Side Heartbeat & Zombie Pruning**: Recurring ping/pong health checks (default 30s) automatically detect inactive sockets, respond to client heartbeat pings/pongs, and terminate dead zombie connections with presence broadcast updates.
+- **Live Event Broadcasting**: Instant updates for card moves, creation, edits, deletions, checklist changes, labels, and column changes.
+- **Presence Tracking & Targeted Eviction**: Real-time `user:joined` and `user:left` events with automatic connection-drop cleanup and administrative user/session eviction hooks (`/internal/evict-user`).
 - **Flexible Authentication**: Handshake-level JWT validation supporting headers, cookies, URL query parameters, and subprotocols.
+- **Timing-Attack Resilient Auth**: Login handler utilizes constant-time dummy bcrypt hashing to prevent user enumeration and timing attacks.
 - **Dual-Server & IPC Architecture**: Supports running in unified single-process mode or separated microservices with HTTP broadcast bridging (`/internal/broadcast`).
 
 ### 💬 Threaded Discussions & Comments
 
 - **Hierarchical Comment Tree**: Infinite-depth nested replies powered by an optimized recursive tree algorithm (`commentTree`).
-- **Audit & Editing Policies**: 24-hour edit window enforcement and soft-deletion support.
+- **Audit & Editing Policies**: 24-hour edit window enforcement and soft-deletion support with standard HTTP 200 responses.
 
 ### 🗄️ Database Optimization
 
-- **Composite Indexing**: Optimized indexes on `[boardId, sectionId]`, `[userId, orgId]`, and foreign key cascades.
+- **Composite Indexing**: Optimized indexes on `[boardId, sectionId]`, `[userId, orgId]`, `[boardId, sequence]`, and foreign key cascades.
 - **Prisma Client Generation**: Tailored output with PostgreSQL native pooling adapter.
 
 ---
@@ -77,15 +83,15 @@ trello/
 │   │   │   ├── routes/        # Express route definitions (with card & section aliases)
 │   │   │   ├── services/      # WebSocketBroadcaster client service
 │   │   │   └── types/         # TypeScript environment and entity typings
-│   │   └── tests/             # Integration & unit test suites (40+ unit tests)
+│   │   └── tests/             # Integration & unit test suites (150+ unit tests)
 │   │
 │   ├── websockets/            # Native Bun WebSocket collaborative server
 │   │   ├── src/
 │   │   │   ├── auth/          # Handshake authentication & token extraction strategies
-│   │   │   ├── server/        # Bun.serve WebSocket server, upgrade handlers, & close hooks
+│   │   │   ├── server/        # Bun.serve WebSocket server, upgrade handlers, heartbeat & close hooks
 │   │   │   ├── services/      # Broadcaster singleton & IPC handler
 │   │   │   └── types/         # Client actions, server events, & payload interfaces
-│   │   ├── tests/             # WebSocket test suites (65 tests across auth, pub/sub, upgrade)
+│   │   ├── tests/             # WebSocket test suites (95+ tests across auth, pub/sub, heartbeat, upgrade)
 │   │   └── index.ts           # WebSocket entrypoint & dual-server runner
 │   │
 │   └── frontend/              # Kanban web application interface (in progress)
@@ -119,11 +125,18 @@ erDiagram
 
     boards ||--o{ sections : "contains"
     boards ||--o{ issues : "contains"
+    boards ||--o{ labels : "has"
+    boards ||--o{ board_events : "records"
 
     sections ||--o{ issues : "categorizes"
 
     issues ||--o{ issue_mapping : "assigned to"
     issues ||--o{ comments : "has"
+    issues ||--o{ checklists : "has"
+    issues ||--o{ issue_labels : "labeled with"
+
+    labels ||--o{ issue_labels : "applied to"
+    checklists ||--o{ checklist_items : "contains"
 
     comments ||--o{ comments : "replies to"
 
@@ -152,6 +165,9 @@ erDiagram
     boards {
         string id PK
         string title
+        string description
+        string color
+        boolean isArchived
         string orgId FK
     }
 
@@ -159,12 +175,20 @@ erDiagram
         string id PK
         string title
         float position
+        int wipLimit
+        boolean isArchived
         string boardId FK
     }
 
     issues {
         string id PK
         string title
+        string description
+        float position
+        Priority priority "low | medium | high | urgent"
+        datetime dueDate
+        datetime startDate
+        boolean isArchived
         string gh_url
         string boardId FK
         string sectionId FK
@@ -184,6 +208,45 @@ erDiagram
         string parentId FK
         datetime createdAt
         datetime deletedAt
+    }
+
+    labels {
+        string id PK
+        string name
+        string color
+        string boardId FK
+    }
+
+    issue_labels {
+        string id PK
+        string issueId FK
+        string labelId FK
+    }
+
+    checklists {
+        string id PK
+        string title
+        float position
+        string issueId FK
+    }
+
+    checklist_items {
+        string id PK
+        string content
+        boolean isCompleted
+        float position
+        datetime dueDate
+        string checklistId FK
+    }
+
+    board_events {
+        string id PK
+        string boardId FK
+        bigint sequence
+        string eventType
+        json payload
+        boolean published
+        datetime createdAt
     }
 ```
 
@@ -221,33 +284,48 @@ Send JSON frames over the WebSocket connection:
   "boardId": "board-uuid"
 }
 
-// 3. Heartbeat Ping
+// 3. Heartbeat Ping / Pong
 {
-  "action": "ping"
+  "action": "ping" // or "heartbeat"
+}
+{
+  "action": "pong" // or "heartbeat_ack"
 }
 ```
+
+> [!NOTE]
+> The WebSocket server automatically runs server-side heartbeat intervals (default 30s) sending native ping frames and checking socket activity. Sockets that fail to respond before the subsequent heartbeat check are automatically terminated as zombie connections and broadcast `user:left` presence updates.
 
 ### Server-to-Client Broadcast Events
 
 When actions occur via REST API or other clients, events are published to the board room topic (`board_<boardId>`):
 
-| Event Type       | Payload Fields                               | Description                              |
-| :--------------- | :------------------------------------------- | :--------------------------------------- |
-| `user:joined`    | `{ userId, name, email, boardId }`           | Collaborator entered the board           |
-| `user:left`      | `{ userId, name, email, boardId }`           | Collaborator left or disconnected        |
-| `card:created`   | `{ cardData: Issue }`                        | New card added to a column               |
-| `card:updated`   | `{ cardId, updates: { title?, gh_url? } }`   | Card metadata or title modified          |
-| `card:moved`     | `{ cardId, sourceList, destList, position }` | Card dragged across columns or reordered |
-| `card:deleted`   | `{ cardId }`                                 | Card removed from the board              |
-| `list:created`   | `{ listData: Section }`                      | New column added to the board            |
-| `list:updated`   | `{ listId, title }`                          | Column renamed                           |
-| `list:reordered` | `{ listId, newPosition }`                    | Column reordered                         |
-| `list:deleted`   | `{ listId }`                                 | Column deleted                           |
+| Event Type              | Payload Fields                               | Description                              |
+| :---------------------- | :------------------------------------------- | :--------------------------------------- |
+| `user:joined`           | `{ userId, name, email, boardId }`           | Collaborator entered the board           |
+| `user:left`             | `{ userId, name, email, boardId }`           | Collaborator left or disconnected        |
+| `board:member_evicted`  | `{ userId, orgId, boardId }`                 | Member removed from organization         |
+| `board:evicted`         | `{ boardId, reason }`                        | Direct socket notification of eviction   |
+| `card:created`          | `{ cardData: Issue }`                        | New card added to a column               |
+| `card:updated`          | `{ cardId, updates: { ... } }`               | Card metadata, title, or fields modified |
+| `card:moved`            | `{ cardId, sourceList, destList, position }` | Card dragged across columns or reordered |
+| `card:deleted`          | `{ cardId }`                                 | Card removed from the board              |
+| `card:label_attached`   | `{ issueId, labelId, label }`                | Label attached to card                   |
+| `card:label_removed`    | `{ issueId, labelId }`                       | Label removed from card                  |
+| `checklist:created`     | `{ checklist }`                              | Checklist added to card                  |
+| `checklist:deleted`     | `{ checklistId, issueId }`                   | Checklist deleted                        |
+| `checklist_item:created`| `{ item }`                                   | Item added to checklist                  |
+| `checklist_item:updated`| `{ item }`                                   | Checklist item toggled or updated        |
+| `list:created`          | `{ listData: Section }`                      | New column added to the board            |
+| `list:updated`          | `{ listId, title, wipLimit?, isArchived? }`  | Column renamed or updated                |
+| `list:reordered`        | `{ listId, newPosition }`                    | Column reordered                         |
+| `list:deleted`          | `{ listId }`                                 | Column deleted                           |
 
 ### HTTP Endpoints on WebSocket Server
 
 - `GET /health` or `GET /api/health`: Health status and port inspection.
-- `POST /internal/broadcast`: Inter-process broadcast hook used by Express when running in multi-process mode. Authenticated via `x-internal-secret: <jwt_key>`.
+- `POST /internal/broadcast`: Inter-process broadcast hook used by Express when running in multi-process mode. Authenticated via `x-internal-secret: <jwt_key>` or `INTERNAL_BROADCAST_SECRET`.
+- `POST /internal/evict-user`: Inter-process user socket eviction endpoint used upon member removal or privilege revocation. Authenticated via `x-internal-secret: <jwt_key>`.
 
 ---
 
@@ -258,44 +336,45 @@ All protected routes require a Bearer token in the `Authorization` header:
 
 ### 🔐 Authentication & Profile
 
-| Method | Endpoint           | Description                       | Access        |
-| :----- | :----------------- | :-------------------------------- | :------------ |
-| `POST` | `/api/auth/signup` | Register a new user               | Public        |
-| `POST` | `/api/auth/login`  | Authenticate user and receive JWT | Public        |
-| `GET`  | `/api/users/me`    | Fetch authenticated user profile  | Authenticated |
+| Method | Endpoint           | Description                                                  | Access        |
+| :----- | :----------------- | :----------------------------------------------------------- | :------------ |
+| `POST` | `/api/auth/signup` | Register a new user                                          | Public        |
+| `POST` | `/api/auth/login`  | Authenticate user (timing-attack resistant) and receive JWT  | Public        |
+| `GET`  | `/api/users/me`    | Fetch authenticated user profile                             | Authenticated |
 
 ### 🏢 Organizations & Memberships
 
-| Method   | Endpoint                   | Description                             | Access         |
-| :------- | :------------------------- | :-------------------------------------- | :------------- |
-| `GET`    | `/api/orgs`                | List all organizations for current user | Authenticated  |
-| `POST`   | `/api/orgs`                | Create a new organization               | Authenticated  |
-| `GET`    | `/api/orgs/:orgId`         | Get details of a specific organization  | Member         |
-| `PUT`    | `/api/orgs/:orgId`         | Update organization details             | Org Admin      |
-| `DELETE` | `/api/orgs/:orgId`         | Delete organization                     | Org Admin      |
+| Method   | Endpoint                   | Description                                                    | Access         |
+| :------- | :------------------------- | :------------------------------------------------------------- | :------------- |
+| `GET`    | `/api/orgs`                | List all organizations for current user                        | Authenticated  |
+| `POST`   | `/api/orgs`                | Create a new organization                                      | Authenticated  |
+| `GET`    | `/api/orgs/:orgId`         | Get details of a specific organization                         | Member         |
+| `PUT`    | `/api/orgs/:orgId`         | Update organization details                                    | Org Admin      |
+| `DELETE` | `/api/orgs/:orgId`         | Delete organization                                            | Org Admin      |
 | `GET`    | `/api/orgs/:orgId/members` | List members and their roles (Member only, 200 OK)             | Member         |
 | `POST`   | `/api/orgs/:orgId/members` | Invite a user to an organization                               | Org Admin      |
 | `PUT`    | `/api/orgs/:orgId/accept`  | Accept an organization invitation                              | Invitee        |
 | `PUT`    | `/api/orgs/:orgId/members` | Update a member's role                                         | Org Admin      |
-| `DELETE` | `/api/orgs/:orgId/members` | Remove user or leave organization                              | Member / Admin |
+| `DELETE` | `/api/orgs/:orgId/members` | Remove user, leave org, or cancel/revoke pending invitations   | Member / Admin |
 
-### 📋 Boards
+### 📋 Boards & Event Sync
 
-| Method   | Endpoint                  | Description                                | Access    |
-| :------- | :------------------------ | :----------------------------------------- | :-------- |
-| `GET`    | `/api/orgs/:orgId/boards` | List all boards in an organization         | Member    |
-| `POST`   | `/api/orgs/:orgId/boards` | Create a new board                         | Member    |
-| `GET`    | `/api/boards/:boardId`    | Get board details with sections and issues | Member    |
-| `PUT`    | `/api/boards/:boardId`    | Rename / update board details              | Member    |
-| `DELETE` | `/api/boards/:boardId`    | Delete board and associated data           | Org Admin |
+| Method   | Endpoint                                              | Description                                           | Access    |
+| :------- | :---------------------------------------------------- | :---------------------------------------------------- | :-------- |
+| `GET`    | `/api/orgs/:orgId/boards`                             | List all boards in an organization                    | Member    |
+| `POST`   | `/api/orgs/:orgId/boards`                             | Create a new board                                    | Member    |
+| `GET`    | `/api/boards/:boardId`                                | Get board details with sections and issues            | Member    |
+| `PUT`    | `/api/boards/:boardId`                                | Rename / update board details                         | Member    |
+| `DELETE` | `/api/boards/:boardId`                                | Delete board and associated data                      | Org Admin |
+| `GET`    | `/api/boards/:boardId/events`<br>`/api/boards/:id/events` | Catch-up sync missed board events (`?sinceSeq=&limit=`) | Member |
 
 ### 📑 Sections (Columns)
 
 | Method          | Endpoint                        | Description                                                                                     | Access    |
 | :-------------- | :------------------------------ | :---------------------------------------------------------------------------------------------- | :-------- |
 | `GET`           | `/api/boards/:boardId/sections` | List sections for a board (sorted by `position`)                                                | Member    |
-| `POST`          | `/api/boards/:boardId/sections` | Create a new section column (`list:created`, optional `position`)                               | Member    |
-| `PUT` / `PATCH` | `/api/sections/:sectionId`      | Rename (`title`) or reorder (`position` / `newPosition`) with DB persistence (`list:updated` / `list:reordered`) | Member    |
+| `POST`          | `/api/boards/:boardId/sections` | Create a new section (`list:created`, auto-spaced `position`)                                    | Member    |
+| `PUT` / `PATCH` | `/api/sections/:sectionId`      | Rename (`title`), set `wipLimit`, archive, or reorder (`position` / `newPosition`)              | Member    |
 | `DELETE`        | `/api/sections/:sectionId`      | Delete section; requires `targetSectionId` if section has issues (`list:deleted`)                | Org Admin |
 
 ### 📌 Issues (Cards) & Assignments
@@ -303,22 +382,40 @@ All protected routes require a Bearer token in the `Authorization` header:
 | Method          | Endpoint                                                              | Description                                                                     | Access |
 | :-------------- | :-------------------------------------------------------------------- | :------------------------------------------------------------------------------ | :----- |
 | `GET`           | `/api/sections/:sectionId/issues`<br>`/api/sections/:sectionId/cards` | List cards in a section                                                         | Member |
-| `POST`          | `/api/sections/:sectionId/issues`<br>`/api/sections/:sectionId/cards` | Create a card; verifies section belongs to the board (`card:created`)            | Member |
+| `POST`          | `/api/sections/:sectionId/issues`<br>`/api/sections/:sectionId/cards` | Create a card (`card:created`, auto-spaced `position`)                          | Member |
 | `GET`           | `/api/issues/:issueId`<br>`/api/cards/:issueId` / `:id`               | Get full card details                                                           | Member |
-| `PUT` / `PATCH` | `/api/issues/:issueId`<br>`/api/cards/:issueId` / `:id`               | Update card title, GitHub URL, or section                        | Member |
-| `PATCH`         | `/api/cards/:issueId/move`<br>`/api/cards/:id/move`                   | Explicitly move card across sections or positions (`card:moved`) | Member |
-| `DELETE`        | `/api/issues/:issueId`<br>`/api/cards/:issueId` / `:id`               | Delete card (`card:deleted`)                                     | Member |
-| `POST`          | `/api/issues/:issueId/assignees`                                      | Assign users to card                                             | Member |
-| `DELETE`        | `/api/issues/:issueId/assignees`                                      | Remove user assignment                                           | Member |
+| `PATCH`         | `/api/issues/:issueId`<br>`/api/cards/:issueId` / `:id`               | Update card title, priority, due date, start date, archive status, or move      | Member |
+| `PATCH`         | `/api/cards/:issueId/move`<br>`/api/cards/:id/move`                   | Explicitly move card across sections or positions (`card:moved`)                | Member |
+| `DELETE`        | `/api/issues/:issueId`<br>`/api/cards/:issueId` / `:id`               | Delete card (`card:deleted`)                                                    | Member |
+| `POST`          | `/api/issues/:issueId/assignees`                                      | Assign users to card with email deduplication                                  | Member |
+| `DELETE`        | `/api/issues/:issueId/assignees`                                      | Remove user assignment                                                          | Member |
+
+### 🏷️ Labels
+
+| Method   | Endpoint                                  | Description                                   | Access    |
+| :------- | :---------------------------------------- | :-------------------------------------------- | :-------- |
+| `POST`   | `/api/boards/:boardId/labels`             | Create a new label on a board                 | Member    |
+| `GET`    | `/api/boards/:boardId/labels`             | List all labels defined on a board            | Member    |
+| `POST`   | `/api/issues/:issueId/labels`             | Attach a label to an issue/card               | Member    |
+| `DELETE` | `/api/issues/:issueId/labels/:labelId`    | Detach a label from an issue/card             | Member    |
+
+### ✅ Checklists & Subtasks
+
+| Method   | Endpoint                              | Description                                      | Access    |
+| :------- | :------------------------------------ | :----------------------------------------------- | :-------- |
+| `POST`   | `/api/issues/:issueId/checklists`     | Create a checklist on a card                     | Member    |
+| `POST`   | `/api/checklists/:checklistId/items`  | Add an item/subtask to a checklist               | Member    |
+| `PATCH`  | `/api/checklists/items/:itemId`       | Update checklist item content, completion, or due date | Member |
+| `DELETE` | `/api/checklists/:checklistId`        | Delete an entire checklist                       | Member    |
 
 ### 💬 Threaded Comments
 
-| Method   | Endpoint                        | Description                                | Access         |
-| :------- | :------------------------------ | :----------------------------------------- | :------------- |
-| `GET`    | `/api/issues/:issueId/comments` | Get nested comment tree for an issue       | Member         |
-| `POST`   | `/api/issues/:issueId/comments` | Post a comment or reply to an existing one | Member         |
-| `PUT`    | `/api/comments/:commentId`      | Edit a comment (within 24-hour limit)      | Author         |
-| `DELETE` | `/api/comments/:commentId`      | Delete a comment                           | Author / Admin |
+| Method   | Endpoint                        | Description                                     | Access         |
+| :------- | :------------------------------ | :---------------------------------------------- | :------------- |
+| `GET`    | `/api/issues/:issueId/comments` | Get nested comment tree for an issue            | Member         |
+| `POST`   | `/api/issues/:issueId/comments` | Post a comment or reply to an existing one      | Member         |
+| `PUT`    | `/api/comments/:commentId`      | Edit a comment (within 24-hour limit, 200 OK)   | Author         |
+| `DELETE` | `/api/comments/:commentId`      | Delete a comment (200 OK)                       | Author / Admin |
 
 ---
 
@@ -413,10 +510,10 @@ The repository features comprehensive automated testing using Bun's native test 
 # 1. Run all tests across the monorepo
 bun run test
 
-# 2. Run WebSocket unit and integration tests (65 tests)
+# 2. Run WebSocket unit and integration tests (97 tests)
 bun test --cwd apps/websockets
 
-# 3. Run Backend unit tests (helpers, middleware, Zod schemas, & broadcast dispatches)
+# 3. Run Backend unit tests (helpers, middleware, Zod schemas, parity, & broadcast dispatches)
 bun test apps/backend/tests/unit
 
 # 4. Run Full Backend integration tests (requires PostgreSQL test database)
@@ -435,20 +532,23 @@ bun run check-types
 
 - [x] Monorepo orchestration with Turborepo & Bun
 - [x] Relational schema design with Prisma & PostgreSQL
-- [x] Authentication & Role-Based Access Control (RBAC)
-- [x] Multi-tenant organization & membership management
-- [x] Board and workflow section (column) management
+- [x] Authentication & Role-Based Access Control (RBAC) with timing-attack prevention
+- [x] Multi-tenant organization & membership management with pending invitation revoking
+- [x] Board and workflow section (column) management with auto-spaced positions
 - [x] Issue lifecycle, movement across columns, and position reordering
 - [x] RESTful Card and Section aliases (`/api/cards/*`, `PATCH /move`)
-- [x] Multi-user card assignments (`issue_mapping`)
-- [x] Threaded nested comment tree with edit time limits
+- [x] Multi-user card assignments (`issue_mapping`) with email deduplication
+- [x] Card labels & checklist subtasks with position ordering
+- [x] Threaded nested comment tree with edit time limits (200 OK responses)
 - [x] Native WebSocket server with board pub/sub rooms
+- [x] Event sourcing with advisory locks (`pg_advisory_xact_lock`) and catch-up event sync
+- [x] Server-side heartbeat intervals and automatic zombie socket cleanup
 - [x] Multi-strategy handshake authentication (Headers, Cookies, Query, Subprotocol)
-- [x] Real-time presence tracking (`user:joined`, `user:left`)
+- [x] Real-time presence tracking (`user:joined`, `user:left`) and targeted member eviction
 - [x] Automatic WebSocket disconnect cleanup
 - [x] Inter-process event synchronization (`WebSocketBroadcaster` with HTTP bridge)
-- [x] Comprehensive test suites (65 WebSocket tests + 40 Backend unit tests)
+- [x] Comprehensive test suites (97 WebSocket tests + 156 Backend unit tests)
 - [ ] Next.js / React frontend UI with drag-and-drop Kanban board (`dnd-kit`)
 - [ ] GitHub webhook integration for automated card syncing
 - [ ] Card activity log and audit history
-- [ ] File attachments & custom labels / tags
+- [ ] File attachments
