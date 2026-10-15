@@ -11,7 +11,7 @@
   },
   "devDependencies": {
     "prettier": "^3.9.9",
-    "turbo": "^2.11.7",
+    "turbo": "^2.11.8",
     "typescript": "5.9.2"
   },
   "engines": {

@@ -2,29 +2,35 @@ import { describe, expect, it, mock } from "bun:test";
 import { prisma } from "db/prisma";
 import { WebSocketBroadcaster, wsBroadcaster } from "../src/services/broadcaster";
 
-describe("WebSocketBroadcaster Service Integration Tests", () => {
-    function createMockServer() {
+describe("WebSocketBroadcaster Service Integration Tests", () =>
+{
+    function createMockServer()
+    {
         const published: { topic: string; message: string }[] = [];
         return {
             port: 3001,
-            publish: mock((topic: string, message: string) => {
+            publish: mock((topic: string, message: string) =>
+            {
                 published.push({ topic, message });
                 return 1;
             }),
-            getPublished() {
+            getPublished()
+            {
                 return published;
             }
         };
     }
 
-    it("verifies singleton pattern across getInstance() calls", () => {
+    it("verifies singleton pattern across getInstance() calls", () =>
+    {
         const instance1 = WebSocketBroadcaster.getInstance();
         const instance2 = WebSocketBroadcaster.getInstance();
         expect(instance1).toBe(instance2);
         expect(instance1).toBe(wsBroadcaster);
     });
 
-    it("attaches Bun.serve instance and verifies isServerAttached", () => {
+    it("attaches Bun.serve instance and verifies isServerAttached", () =>
+    {
         const broadcaster = new WebSocketBroadcaster();
         expect(broadcaster.isServerAttached()).toBe(false);
 
@@ -35,7 +41,8 @@ describe("WebSocketBroadcaster Service Integration Tests", () => {
         expect(broadcaster.getServer()).toBe(mockServer as any);
     });
 
-    it("publishes to server and emits events when server is attached", async () => {
+    it("publishes to server and emits events when server is attached", async () =>
+    {
         const broadcaster = new WebSocketBroadcaster();
         const mockServer = createMockServer();
         broadcaster.setServer(mockServer as any);
@@ -43,10 +50,12 @@ describe("WebSocketBroadcaster Service Integration Tests", () => {
         let broadcastEventReceived: any = null;
         let boardEventReceived: any = null;
 
-        broadcaster.on("broadcast", (data) => {
+        broadcaster.on("broadcast", (data) =>
+        {
             broadcastEventReceived = data;
         });
-        broadcaster.on("board:board_100", (data) => {
+        broadcaster.on("board:board_100", (data) =>
+        {
             boardEventReceived = data;
         });
 
@@ -67,13 +76,15 @@ describe("WebSocketBroadcaster Service Integration Tests", () => {
         expect(published[0]!.message).toContain("custom:event");
     });
 
-    it("broadcastCardMoved sends standard card:moved payload shape", async () => {
+    it("broadcastCardMoved sends standard card:moved payload shape", async () =>
+    {
         const broadcaster = new WebSocketBroadcaster();
         const mockServer = createMockServer();
         broadcaster.setServer(mockServer as any);
 
         let receivedPayload: any = null;
-        broadcaster.on("board:board_456", (evt) => {
+        broadcaster.on("board:board_456", (evt) =>
+        {
             receivedPayload = evt;
         });
 
@@ -92,13 +103,15 @@ describe("WebSocketBroadcaster Service Integration Tests", () => {
         expect(receivedPayload.payload.position).toBe(3);
     });
 
-    it("broadcastCardCreated sends standard card:created payload shape", async () => {
+    it("broadcastCardCreated sends standard card:created payload shape", async () =>
+    {
         const broadcaster = new WebSocketBroadcaster();
         const mockServer = createMockServer();
         broadcaster.setServer(mockServer as any);
 
         let receivedPayload: any = null;
-        broadcaster.on("board:board_456", (evt) => {
+        broadcaster.on("board:board_456", (evt) =>
+        {
             receivedPayload = evt;
         });
 
@@ -112,13 +125,15 @@ describe("WebSocketBroadcaster Service Integration Tests", () => {
         expect(receivedPayload.payload.cardData.title).toBe("Task title");
     });
 
-    it("broadcastCardUpdated sends standard card:updated payload shape", async () => {
+    it("broadcastCardUpdated sends standard card:updated payload shape", async () =>
+    {
         const broadcaster = new WebSocketBroadcaster();
         const mockServer = createMockServer();
         broadcaster.setServer(mockServer as any);
 
         let receivedPayload: any = null;
-        broadcaster.on("board:board_456", (evt) => {
+        broadcaster.on("board:board_456", (evt) =>
+        {
             receivedPayload = evt;
         });
 
@@ -129,13 +144,15 @@ describe("WebSocketBroadcaster Service Integration Tests", () => {
         expect(receivedPayload.payload.updates.title).toBe("New title");
     });
 
-    it("broadcastCardDeleted sends standard card:deleted payload shape", async () => {
+    it("broadcastCardDeleted sends standard card:deleted payload shape", async () =>
+    {
         const broadcaster = new WebSocketBroadcaster();
         const mockServer = createMockServer();
         broadcaster.setServer(mockServer as any);
 
         let receivedPayload: any = null;
-        broadcaster.on("board:board_456", (evt) => {
+        broadcaster.on("board:board_456", (evt) =>
+        {
             receivedPayload = evt;
         });
 
@@ -145,13 +162,15 @@ describe("WebSocketBroadcaster Service Integration Tests", () => {
         expect(receivedPayload.payload.cardId).toBe("card_789");
     });
 
-    it("broadcastListReordered sends standard list:reordered payload shape", async () => {
+    it("broadcastListReordered sends standard list:reordered payload shape", async () =>
+    {
         const broadcaster = new WebSocketBroadcaster();
         const mockServer = createMockServer();
         broadcaster.setServer(mockServer as any);
 
         let receivedPayload: any = null;
-        broadcaster.on("board:board_456", (evt) => {
+        broadcaster.on("board:board_456", (evt) =>
+        {
             receivedPayload = evt;
         });
 
@@ -162,13 +181,15 @@ describe("WebSocketBroadcaster Service Integration Tests", () => {
         expect(receivedPayload.payload.newPosition).toBe(2);
     });
 
-    it("emits events and fails gracefully without crashing when server is not attached", async () => {
+    it("emits events and fails gracefully without crashing when server is not attached", async () =>
+    {
         const broadcaster = new WebSocketBroadcaster();
         // server is null, port points to unused port
         broadcaster.setPort(59999);
 
         let emitted = false;
-        broadcaster.on("board:board_offline", () => {
+        broadcaster.on("board:board_offline", () =>
+        {
             emitted = true;
         });
 
@@ -182,7 +203,8 @@ describe("WebSocketBroadcaster Service Integration Tests", () => {
         expect(res).toBe(false);
     });
 
-    it("verifies broadcaster publishes exactly once to the canonical topic without duplicate topic publishing", async () => {
+    it("verifies broadcaster publishes exactly once to the canonical topic without duplicate topic publishing", async () =>
+    {
         const broadcaster = new WebSocketBroadcaster();
         const mockServer = createMockServer();
         broadcaster.setServer(mockServer as any);
@@ -207,13 +229,15 @@ describe("WebSocketBroadcaster Service Integration Tests", () => {
         expect(mockServer.getPublished()[1]!.topic).toBe("board_uuid_999");
     });
 
-    it("handles non-string, empty, or whitespace boardIds gracefully by returning false without publishing", async () => {
+    it("handles non-string, empty, or whitespace boardIds gracefully by returning false without publishing", async () =>
+    {
         const broadcaster = new WebSocketBroadcaster();
         const mockServer = createMockServer();
         broadcaster.setServer(mockServer as any);
 
         const invalidBoardIds = [12345, 0, false, true, null, undefined, {}, [], "", "   "];
-        for (const badId of invalidBoardIds) {
+        for (const badId of invalidBoardIds)
+        {
             const res = await broadcaster.broadcast(badId as any, { type: "test", payload: {} });
             expect(res).toBe(false);
         }
@@ -221,11 +245,14 @@ describe("WebSocketBroadcaster Service Integration Tests", () => {
         expect(mockServer.getPublished().length).toBe(0);
     });
 
-    describe("evictUser and in-memory EvictionHandler", () => {
-        it("emits evictUser event on local EventEmitter with parameters", async () => {
+    describe("evictUser and in-memory EvictionHandler", () =>
+    {
+        it("emits evictUser event on local EventEmitter with parameters", async () =>
+        {
             const broadcaster = new WebSocketBroadcaster();
             let emitted: any = null;
-            broadcaster.on("evictUser", (data) => {
+            broadcaster.on("evictUser", (data) =>
+            {
                 emitted = data;
             });
 
@@ -239,11 +266,13 @@ describe("WebSocketBroadcaster Service Integration Tests", () => {
             expect(emitted.boardIds).toEqual(["board_1", "board_2"]);
         });
 
-        it("invokes registered evictionHandler directly in-memory and returns true", async () => {
+        it("invokes registered evictionHandler directly in-memory and returns true", async () =>
+        {
             const broadcaster = new WebSocketBroadcaster();
             let handlerCalledWith: any = null;
 
-            broadcaster.setEvictionHandler(async (opts) => {
+            broadcaster.setEvictionHandler(async (opts) =>
+            {
                 handlerCalledWith = opts;
                 return 2; // evicted 2 sockets
             });
@@ -259,9 +288,11 @@ describe("WebSocketBroadcaster Service Integration Tests", () => {
             expect(handlerCalledWith.reason).toBe("FORBIDDEN_REVOKED: Organization membership terminated");
         });
 
-        it("returns false if registered evictionHandler throws an error", async () => {
+        it("returns false if registered evictionHandler throws an error", async () =>
+        {
             const broadcaster = new WebSocketBroadcaster();
-            broadcaster.setEvictionHandler(() => {
+            broadcaster.setEvictionHandler(() =>
+            {
                 throw new Error("Simulated eviction failure");
             });
 
@@ -269,7 +300,8 @@ describe("WebSocketBroadcaster Service Integration Tests", () => {
             expect(res).toBe(false);
         });
 
-        it("falls back to HTTP IPC endpoint when no evictionHandler is registered", async () => {
+        it("falls back to HTTP IPC endpoint when no evictionHandler is registered", async () =>
+        {
             const broadcaster = new WebSocketBroadcaster();
             broadcaster.setPort(9999);
 
@@ -278,14 +310,16 @@ describe("WebSocketBroadcaster Service Integration Tests", () => {
             let fetchBody: any = null;
             let fetchHeaders: any = null;
 
-            globalThis.fetch = mock((url: any, opts: any) => {
+            globalThis.fetch = mock((url: any, opts: any) =>
+            {
                 fetchUrl = String(url);
                 fetchBody = JSON.parse(opts.body);
                 fetchHeaders = opts.headers;
                 return Promise.resolve(new Response(JSON.stringify({ success: true, evictedCount: 1 }), { status: 200 }));
             }) as any;
 
-            try {
+            try
+            {
                 const res = await broadcaster.evictUser("user_ipc", "org_ipc", ["b1"]);
                 expect(res).toBe(true);
                 expect(fetchUrl).toBe("http://127.0.0.1:9999/internal/evict-user");
@@ -293,30 +327,36 @@ describe("WebSocketBroadcaster Service Integration Tests", () => {
                 expect(fetchBody.orgId).toBe("org_ipc");
                 expect(fetchBody.boardIds).toEqual(["b1"]);
                 expect(fetchHeaders["Content-Type"]).toBe("application/json");
-            } finally {
+            } finally
+            {
                 globalThis.fetch = origFetch;
             }
         });
 
-        it("returns false when HTTP fallback fails or throws", async () => {
+        it("returns false when HTTP fallback fails or throws", async () =>
+        {
             const broadcaster = new WebSocketBroadcaster();
             broadcaster.setPort(9999);
 
             const origFetch = globalThis.fetch;
             globalThis.fetch = mock(() => Promise.reject(new Error("Network offline"))) as any;
 
-            try {
+            try
+            {
                 const res = await broadcaster.evictUser("user_fail");
                 expect(res).toBe(false);
-            } finally {
+            } finally
+            {
                 globalThis.fetch = origFetch;
             }
         });
 
-        it("returns false immediately for empty, whitespace, or invalid userId", async () => {
+        it("returns false immediately for empty, whitespace, or invalid userId", async () =>
+        {
             const broadcaster = new WebSocketBroadcaster();
             let handlerCalled = false;
-            broadcaster.setEvictionHandler(() => {
+            broadcaster.setEvictionHandler(() =>
+            {
                 handlerCalled = true;
                 return true;
             });
@@ -329,14 +369,16 @@ describe("WebSocketBroadcaster Service Integration Tests", () => {
             expect(handlerCalled).toBe(false);
         });
 
-        it("verifies dual-server singleton consistency and evictUser availability", () => {
+        it("verifies dual-server singleton consistency and evictUser availability", () =>
+        {
             const instance = WebSocketBroadcaster.getInstance();
             expect(typeof instance.evictUser).toBe("function");
             expect(typeof instance.setEvictionHandler).toBe("function");
             expect(typeof instance.getEvictionHandler).toBe("function");
         });
 
-        it("uses INTERNAL_BROADCAST_SECRET in HTTP fallback when configured", async () => {
+        it("uses INTERNAL_BROADCAST_SECRET in HTTP fallback when configured", async () =>
+        {
             const broadcaster = new WebSocketBroadcaster();
             broadcaster.setPort(9999);
 
@@ -345,18 +387,23 @@ describe("WebSocketBroadcaster Service Integration Tests", () => {
             process.env.INTERNAL_BROADCAST_SECRET = "custom-internal-secret-xyz";
 
             let fetchHeaders: any = null;
-            globalThis.fetch = mock((_url: any, opts: any) => {
+            globalThis.fetch = mock((_url: any, opts: any) =>
+            {
                 fetchHeaders = opts.headers;
                 return Promise.resolve(new Response(JSON.stringify({ success: true }), { status: 200 }));
             }) as any;
 
-            try {
+            try
+            {
                 await broadcaster.broadcast("test_board_secret", { type: "test", payload: {} });
                 expect(fetchHeaders["x-internal-secret"]).toBe("custom-internal-secret-xyz");
-            } finally {
-                if (origSecret !== undefined) {
+            } finally
+            {
+                if (origSecret !== undefined)
+                {
                     process.env.INTERNAL_BROADCAST_SECRET = origSecret;
-                } else {
+                } else
+                {
                     delete process.env.INTERNAL_BROADCAST_SECRET;
                 }
                 globalThis.fetch = origFetch;
@@ -364,15 +411,18 @@ describe("WebSocketBroadcaster Service Integration Tests", () => {
         });
     });
 
-    describe("recordBoardEvent persistence and P2002 retry handling", () => {
-        it("returns null immediately for invalid or empty boardId", async () => {
+    describe("recordBoardEvent persistence and P2002 retry handling", () =>
+    {
+        it("returns null immediately for invalid or empty boardId", async () =>
+        {
             const broadcaster = new WebSocketBroadcaster();
             expect(await broadcaster.recordBoardEvent("", "card:created", {})).toBeNull();
             expect(await broadcaster.recordBoardEvent("   ", "card:created", {})).toBeNull();
             expect(await broadcaster.recordBoardEvent(null as any, "card:created", {})).toBeNull();
         });
 
-        it("records board event with incremented sequence when findFirst succeeds", async () => {
+        it("records board event with incremented sequence when findFirst succeeds", async () =>
+        {
             const broadcaster = new WebSocketBroadcaster();
             const origFindFirst = prisma.board_events.findFirst;
             const origCreate = prisma.board_events.create;
@@ -392,21 +442,25 @@ describe("WebSocketBroadcaster Service Integration Tests", () => {
             prisma.board_events.create = origCreate;
         });
 
-        it("retries on P2002 unique constraint conflict and succeeds on next attempt", async () => {
+        it("retries on P2002 unique constraint conflict and succeeds on next attempt", async () =>
+        {
             const broadcaster = new WebSocketBroadcaster();
             const origFindFirst = prisma.board_events.findFirst;
             const origCreate = prisma.board_events.create;
 
             let attempt = 0;
-            prisma.board_events.findFirst = mock(() => {
+            prisma.board_events.findFirst = mock(() =>
+            {
                 attempt++;
                 return Promise.resolve({ sequence: BigInt(attempt * 5) });
             }) as any;
 
             let createCalls = 0;
-            prisma.board_events.create = mock((args: any) => {
+            prisma.board_events.create = mock((args: any) =>
+            {
                 createCalls++;
-                if (createCalls === 1) {
+                if (createCalls === 1)
+                {
                     const p2002Error: any = new Error("Unique constraint violation");
                     p2002Error.code = "P2002";
                     return Promise.reject(p2002Error);
@@ -426,13 +480,15 @@ describe("WebSocketBroadcaster Service Integration Tests", () => {
             prisma.board_events.create = origCreate;
         });
 
-        it("returns null when all 3 attempts fail with P2002", async () => {
+        it("returns null when all 3 attempts fail with P2002", async () =>
+        {
             const broadcaster = new WebSocketBroadcaster();
             const origFindFirst = prisma.board_events.findFirst;
             const origCreate = prisma.board_events.create;
 
             prisma.board_events.findFirst = mock(() => Promise.resolve({ sequence: 10n })) as any;
-            prisma.board_events.create = mock(() => {
+            prisma.board_events.create = mock(() =>
+            {
                 const p2002Error: any = new Error("Unique constraint violation");
                 p2002Error.code = "P2002";
                 return Promise.reject(p2002Error);
@@ -447,4 +503,3 @@ describe("WebSocketBroadcaster Service Integration Tests", () => {
         });
     });
 });
-

@@ -13,7 +13,8 @@ import { getBoardDetails } from "../../src/controllers/board/getaBoard";
 import { wsBroadcaster } from "../../src/services/broadcaster";
 import { WebSocketBroadcaster as WsBroadcaster } from "../../../websockets/src/services/broadcaster";
 
-describe("Controller fixes unit tests", () => {
+describe("Controller fixes unit tests", () =>
+{
     const validBoardId = "11111111-1111-4111-8111-111111111111";
     const validSectionId = "22222222-2222-4222-8222-222222222222";
     const validTargetSectionId = "33333333-3333-4333-8333-333333333333";
@@ -21,37 +22,44 @@ describe("Controller fixes unit tests", () => {
     const otherBoardId = "55555555-5555-4555-8555-555555555555";
     const userId = "user-123";
 
-    function createMockRes() {
+    function createMockRes()
+    {
         const res: any = {};
-        res.status = mock((code: number) => {
+        res.status = mock((code: number) =>
+        {
             res.statusCode = code;
             return res;
         });
-        res.json = mock((payload: any) => {
+        res.json = mock((payload: any) =>
+        {
             res.body = payload;
             return res;
         });
         return res;
     }
 
-    describe("createIssue cross-board validation and position handling", () => {
+    describe("createIssue cross-board validation and position handling", () =>
+    {
         const origBoardFindUnique = prisma.boards.findUnique;
         const origSectionFindUnique = prisma.sections.findUnique;
         const origIssueCreate = prisma.issues.create;
         const origIssueCount = prisma.issues.count;
 
-        afterEach(() => {
+        afterEach(() =>
+        {
             prisma.boards.findUnique = origBoardFindUnique;
             prisma.sections.findUnique = origSectionFindUnique;
             prisma.issues.create = origIssueCreate;
             prisma.issues.count = origIssueCount;
         });
 
-        beforeEach(() => {
+        beforeEach(() =>
+        {
             prisma.issues.count = mock(() => Promise.resolve(0)) as any;
         });
 
-        it("throws ValidationError when section belongs to a different board", async () => {
+        it("throws ValidationError when section belongs to a different board", async () =>
+        {
             prisma.boards.findUnique = mock(() => Promise.resolve({
                 id: validBoardId,
                 org: {
@@ -74,7 +82,8 @@ describe("Controller fixes unit tests", () => {
             await expect(createIssue(req, res)).rejects.toThrow("Section belongs to a different board");
         });
 
-        it("throws Not_Found when section does not exist", async () => {
+        it("throws Not_Found when section does not exist", async () =>
+        {
             prisma.boards.findUnique = mock(() => Promise.resolve({
                 id: validBoardId,
                 org: {
@@ -94,7 +103,8 @@ describe("Controller fixes unit tests", () => {
             await expect(createIssue(req, res)).rejects.toThrow("Section not found");
         });
 
-        it("creates issue when section belongs to board", async () => {
+        it("creates issue when section belongs to board", async () =>
+        {
             prisma.boards.findUnique = mock(() => Promise.resolve({
                 id: validBoardId,
                 org: {
@@ -124,7 +134,8 @@ describe("Controller fixes unit tests", () => {
             expect(res.body.data.title).toBe("Test Issue");
         });
 
-        it("calculates default position based on existing issue count when not provided", async () => {
+        it("calculates default position based on existing issue count when not provided", async () =>
+        {
             prisma.boards.findUnique = mock(() => Promise.resolve({
                 id: validBoardId,
                 org: {
@@ -140,7 +151,8 @@ describe("Controller fixes unit tests", () => {
             prisma.issues.count = mock(() => Promise.resolve(2)) as any;
 
             let createdData: any;
-            prisma.issues.create = mock((args: any) => {
+            prisma.issues.create = mock((args: any) =>
+            {
                 createdData = args.data;
                 return Promise.resolve({
                     id: "issue-1",
@@ -160,7 +172,8 @@ describe("Controller fixes unit tests", () => {
             expect(createdData.position).toBe(3000); // (2 + 1) * 1000
         });
 
-        it("preserves explicit position when provided", async () => {
+        it("preserves explicit position when provided", async () =>
+        {
             prisma.boards.findUnique = mock(() => Promise.resolve({
                 id: validBoardId,
                 org: {
@@ -174,7 +187,8 @@ describe("Controller fixes unit tests", () => {
             })) as any;
 
             let createdData: any;
-            prisma.issues.create = mock((args: any) => {
+            prisma.issues.create = mock((args: any) =>
+            {
                 createdData = args.data;
                 return Promise.resolve({
                     id: "issue-1",
@@ -195,16 +209,19 @@ describe("Controller fixes unit tests", () => {
         });
     });
 
-    describe("OrgMembersHandler authorization", () => {
+    describe("OrgMembersHandler authorization", () =>
+    {
         const origMembershipFindUnique = prisma.membership.findUnique;
         const origMembershipFindMany = prisma.membership.findMany;
 
-        afterEach(() => {
+        afterEach(() =>
+        {
             prisma.membership.findUnique = origMembershipFindUnique;
             prisma.membership.findMany = origMembershipFindMany;
         });
 
-        it("throws Forbidden when requester is not an accepted member of the organization", async () => {
+        it("throws Forbidden when requester is not an accepted member of the organization", async () =>
+        {
             prisma.membership.findUnique = mock(() => Promise.resolve(null)) as any;
 
             const req: any = {
@@ -216,7 +233,8 @@ describe("Controller fixes unit tests", () => {
             await expect(OrgMembersHandler(req, res)).rejects.toThrow("Member access only");
         });
 
-        it("returns member list with 200 status when requester is an accepted member", async () => {
+        it("returns member list with 200 status when requester is an accepted member", async () =>
+        {
             prisma.membership.findUnique = mock(() => Promise.resolve({
                 id: "mem-1",
                 userId,
@@ -241,18 +259,21 @@ describe("Controller fixes unit tests", () => {
         });
     });
 
-    describe("deleteSection issue handling", () => {
+    describe("deleteSection issue handling", () =>
+    {
         const origSectionFindUnique = prisma.sections.findUnique;
         const origSectionDelete = prisma.sections.delete;
         const origIssueUpdateMany = prisma.issues.updateMany;
 
-        afterEach(() => {
+        afterEach(() =>
+        {
             prisma.sections.findUnique = origSectionFindUnique;
             prisma.sections.delete = origSectionDelete;
             prisma.issues.updateMany = origIssueUpdateMany;
         });
 
-        it("throws ValidationError when deleting non-empty section without targetSectionId", async () => {
+        it("throws ValidationError when deleting non-empty section without targetSectionId", async () =>
+        {
             prisma.sections.findUnique = mock(() => Promise.resolve({
                 boardId: validBoardId,
                 board: {
@@ -278,7 +299,8 @@ describe("Controller fixes unit tests", () => {
             );
         });
 
-        it("throws ValidationError when targetSectionId is the same section", async () => {
+        it("throws ValidationError when targetSectionId is the same section", async () =>
+        {
             prisma.sections.findUnique = mock(() => Promise.resolve({
                 boardId: validBoardId,
                 board: {
@@ -303,9 +325,12 @@ describe("Controller fixes unit tests", () => {
             );
         });
 
-        it("throws ValidationError when targetSectionId belongs to a different board", async () => {
-            prisma.sections.findUnique = mock((args: any) => {
-                if (args.where.id === validSectionId) {
+        it("throws ValidationError when targetSectionId belongs to a different board", async () =>
+        {
+            prisma.sections.findUnique = mock((args: any) =>
+            {
+                if (args.where.id === validSectionId)
+                {
                     return Promise.resolve({
                         boardId: validBoardId,
                         board: {
@@ -336,7 +361,8 @@ describe("Controller fixes unit tests", () => {
             );
         });
 
-        it("reassigns issues, deletes section inside transaction, and broadcasts card:moved when valid targetSectionId is provided", async () => {
+        it("reassigns issues, deletes section inside transaction, and broadcasts card:moved when valid targetSectionId is provided", async () =>
+        {
             let reassignedTo: string | undefined;
             const movedCards: any[] = [];
             let transactionCalled = false;
@@ -345,18 +371,22 @@ describe("Controller fixes unit tests", () => {
             const origIssueFindMany = prisma.issues.findMany;
             const origBroadcastCardMoved = wsBroadcaster.broadcastCardMoved;
 
-            prisma.$transaction = mock(async (cb: any) => {
+            prisma.$transaction = mock(async (cb: any) =>
+            {
                 transactionCalled = true;
                 return cb(prisma);
             }) as any;
 
-            wsBroadcaster.broadcastCardMoved = mock((boardId: string, payload: any) => {
+            wsBroadcaster.broadcastCardMoved = mock((boardId: string, payload: any) =>
+            {
                 movedCards.push({ boardId, payload });
                 return Promise.resolve(true);
             }) as any;
 
-            prisma.sections.findUnique = mock((args: any) => {
-                if (args.where.id === validSectionId) {
+            prisma.sections.findUnique = mock((args: any) =>
+            {
+                if (args.where.id === validSectionId)
+                {
                     return Promise.resolve({
                         boardId: validBoardId,
                         board: {
@@ -381,7 +411,8 @@ describe("Controller fixes unit tests", () => {
                 { id: "issue-2", position: 200 }
             ])) as any;
 
-            prisma.issues.updateMany = mock((args: any) => {
+            prisma.issues.updateMany = mock((args: any) =>
+            {
                 reassignedTo = args.data.sectionId;
                 return Promise.resolve({ count: 2 });
             }) as any;
@@ -391,7 +422,8 @@ describe("Controller fixes unit tests", () => {
                 title: "To Delete"
             })) as any;
 
-            try {
+            try
+            {
                 const req: any = {
                     id: userId,
                     params: { sectionId: validSectionId },
@@ -408,17 +440,20 @@ describe("Controller fixes unit tests", () => {
                 expect(movedCards[0]!.payload.destList).toBe(validTargetSectionId);
                 expect(movedCards[1]!.payload.cardId).toBe("issue-2");
                 expect(res.body.data).toBe("deleted section: To Delete and reassigned 2 issues");
-            } finally {
+            } finally
+            {
                 prisma.$transaction = origTransaction;
                 prisma.issues.findMany = origIssueFindMany;
                 wsBroadcaster.broadcastCardMoved = origBroadcastCardMoved;
             }
         });
 
-        it("deletes empty section without requiring targetSectionId", async () => {
+        it("deletes empty section without requiring targetSectionId", async () =>
+        {
             const origTransaction = prisma.$transaction;
             let transactionCalled = false;
-            prisma.$transaction = mock(async (cb: any) => {
+            prisma.$transaction = mock(async (cb: any) =>
+            {
                 transactionCalled = true;
                 return cb(prisma);
             }) as any;
@@ -440,7 +475,8 @@ describe("Controller fixes unit tests", () => {
                 title: "Empty Section"
             })) as any;
 
-            try {
+            try
+            {
                 const req: any = {
                     id: userId,
                     params: { sectionId: validSectionId },
@@ -453,22 +489,26 @@ describe("Controller fixes unit tests", () => {
                 expect(res.statusCode).toBe(200);
                 expect(transactionCalled).toBe(true);
                 expect(res.body.data).toBe("deleted section: Empty Section");
-            } finally {
+            } finally
+            {
                 prisma.$transaction = origTransaction;
             }
         });
     });
 
-    describe("renameSection position persistence", () => {
+    describe("renameSection position persistence", () =>
+    {
         const origSectionFindUnique = prisma.sections.findUnique;
         const origSectionUpdate = prisma.sections.update;
 
-        afterEach(() => {
+        afterEach(() =>
+        {
             prisma.sections.findUnique = origSectionFindUnique;
             prisma.sections.update = origSectionUpdate;
         });
 
-        it("persists position when position is provided", async () => {
+        it("persists position when position is provided", async () =>
+        {
             let savedData: any;
 
             prisma.sections.findUnique = mock(() => Promise.resolve({
@@ -480,7 +520,8 @@ describe("Controller fixes unit tests", () => {
                 }
             })) as any;
 
-            prisma.sections.update = mock((args: any) => {
+            prisma.sections.update = mock((args: any) =>
+            {
                 savedData = args.data;
                 return Promise.resolve({
                     id: validSectionId,
@@ -503,7 +544,8 @@ describe("Controller fixes unit tests", () => {
         });
     });
 
-    describe("updateIssue position persistence and broadcasting", () => {
+    describe("updateIssue position persistence and broadcasting", () =>
+    {
         const validIssueId = "66666666-6666-4666-8666-666666666666";
         const origIssueFindUnique = prisma.issues.findUnique;
         const origSectionFindUnique = prisma.sections.findUnique;
@@ -511,7 +553,8 @@ describe("Controller fixes unit tests", () => {
         const origBroadcastCardMoved = wsBroadcaster.broadcastCardMoved;
         const origBroadcastCardUpdated = wsBroadcaster.broadcastCardUpdated;
 
-        afterEach(() => {
+        afterEach(() =>
+        {
             prisma.issues.findUnique = origIssueFindUnique;
             prisma.sections.findUnique = origSectionFindUnique;
             prisma.issues.update = origIssueUpdate;
@@ -519,7 +562,8 @@ describe("Controller fixes unit tests", () => {
             wsBroadcaster.broadcastCardUpdated = origBroadcastCardUpdated;
         });
 
-        it("persists position to database and broadcasts card:moved", async () => {
+        it("persists position to database and broadcasts card:moved", async () =>
+        {
             let updateArgs: any;
             let broadcastArgs: any;
 
@@ -534,7 +578,8 @@ describe("Controller fixes unit tests", () => {
                 }
             })) as any;
 
-            prisma.issues.update = mock((args: any) => {
+            prisma.issues.update = mock((args: any) =>
+            {
                 updateArgs = args;
                 return Promise.resolve({
                     id: validIssueId,
@@ -544,7 +589,8 @@ describe("Controller fixes unit tests", () => {
                 });
             }) as any;
 
-            wsBroadcaster.broadcastCardMoved = mock((boardId: string, payload: any) => {
+            wsBroadcaster.broadcastCardMoved = mock((boardId: string, payload: any) =>
+            {
                 broadcastArgs = { boardId, payload };
                 return Promise.resolve(true);
             }) as any;
@@ -564,7 +610,8 @@ describe("Controller fixes unit tests", () => {
             expect(broadcastArgs.payload.position).toBe(2500);
         });
 
-        it("persists section move with position and broadcasts card:moved", async () => {
+        it("persists section move with position and broadcasts card:moved", async () =>
+        {
             let updateArgs: any;
             let broadcastArgs: any;
 
@@ -584,7 +631,8 @@ describe("Controller fixes unit tests", () => {
                 boardId: validBoardId
             })) as any;
 
-            prisma.issues.update = mock((args: any) => {
+            prisma.issues.update = mock((args: any) =>
+            {
                 updateArgs = args;
                 return Promise.resolve({
                     id: validIssueId,
@@ -594,7 +642,8 @@ describe("Controller fixes unit tests", () => {
                 });
             }) as any;
 
-            wsBroadcaster.broadcastCardMoved = mock((boardId: string, payload: any) => {
+            wsBroadcaster.broadcastCardMoved = mock((boardId: string, payload: any) =>
+            {
                 broadcastArgs = { boardId, payload };
                 return Promise.resolve(true);
             }) as any;
@@ -616,8 +665,10 @@ describe("Controller fixes unit tests", () => {
         });
     });
 
-    describe("Organization Member Eviction Scoping", () => {
-        it("passes boardIds of organization to wsBroadcaster.evictUser", async () => {
+    describe("Organization Member Eviction Scoping", () =>
+    {
+        it("passes boardIds of organization to wsBroadcaster.evictUser", async () =>
+        {
             const origOrgFind = prisma.orgs.findUnique;
             const origMemberDelete = prisma.membership.delete;
             const origBoardsFind = prisma.boards.findMany;
@@ -643,7 +694,8 @@ describe("Controller fixes unit tests", () => {
             ])) as any;
 
             let evictUserArgs: any = null;
-            wsBroadcaster.evictUser = mock((uid: string, orgId?: string, boardIds?: string[]) => {
+            wsBroadcaster.evictUser = mock((uid: string, orgId?: string, boardIds?: string[]) =>
+            {
                 evictUserArgs = { uid, orgId, boardIds };
                 return Promise.resolve(true);
             }) as any;
@@ -671,7 +723,8 @@ describe("Controller fixes unit tests", () => {
             wsBroadcaster.broadcast = origBroadcast;
         });
 
-        it("deleteUserHandler succeeds when wsBroadcaster comes from websockets broadcaster instance in dual-server mode", async () => {
+        it("deleteUserHandler succeeds when wsBroadcaster comes from websockets broadcaster instance in dual-server mode", async () =>
+        {
             const origOrgFind = prisma.orgs.findUnique;
             const origMemberDelete = prisma.membership.delete;
             const origBoardsFind = prisma.boards.findMany;
@@ -696,7 +749,8 @@ describe("Controller fixes unit tests", () => {
             // Instantiate WebSocketBroadcaster from websockets app
             const wsServerBroadcaster = new WsBroadcaster();
             let evictionHandlerCalled = false;
-            wsServerBroadcaster.setEvictionHandler(async (opts) => {
+            wsServerBroadcaster.setEvictionHandler(async (opts) =>
+            {
                 evictionHandlerCalled = true;
                 expect(opts.userId).toBe(targetUserId);
                 expect(opts.orgId).toBe(validOrgId);
@@ -728,7 +782,8 @@ describe("Controller fixes unit tests", () => {
             wsBroadcaster.broadcast = origBroadcast;
         });
 
-        it("deleteUserHandler succeeds and returns 200 even when wsBroadcaster.evictUser throws an unexpected error", async () => {
+        it("deleteUserHandler succeeds and returns 200 even when wsBroadcaster.evictUser throws an unexpected error", async () =>
+        {
             const origOrgFind = prisma.orgs.findUnique;
             const origMemberDelete = prisma.membership.delete;
             const origBoardsFind = prisma.boards.findMany;
@@ -750,7 +805,8 @@ describe("Controller fixes unit tests", () => {
             prisma.membership.delete = mock(() => Promise.resolve({})) as any;
             prisma.boards.findMany = mock(() => Promise.resolve([{ id: "board-1" }])) as any;
 
-            wsBroadcaster.evictUser = mock(() => {
+            wsBroadcaster.evictUser = mock(() =>
+            {
                 throw new Error("Unexpected network crash during eviction");
             }) as any;
             wsBroadcaster.broadcast = mock(() => Promise.resolve(true)) as any;
@@ -775,7 +831,8 @@ describe("Controller fixes unit tests", () => {
             wsBroadcaster.broadcast = origBroadcast;
         });
 
-        it("deleteUserHandler succeeds when wsBroadcaster.evictUser is undefined or not a function", async () => {
+        it("deleteUserHandler succeeds when wsBroadcaster.evictUser is undefined or not a function", async () =>
+        {
             const origOrgFind = prisma.orgs.findUnique;
             const origMemberDelete = prisma.membership.delete;
             const origBoardsFind = prisma.boards.findMany;
@@ -821,13 +878,16 @@ describe("Controller fixes unit tests", () => {
         });
     });
 
-    describe("Deterministic Query Ordering with Compound Sort Criteria", () => {
-        it("getaBoard queries sections and issues with position and secondary tie-breakers", async () => {
+    describe("Deterministic Query Ordering with Compound Sort Criteria", () =>
+    {
+        it("getaBoard queries sections and issues with position and secondary tie-breakers", async () =>
+        {
             const origBoardFind = prisma.boards.findUnique;
             const origMemberFind = prisma.membership.findUnique;
 
             let queryArgs: any = null;
-            prisma.boards.findUnique = mock((args: any) => {
+            prisma.boards.findUnique = mock((args: any) =>
+            {
                 queryArgs = args;
                 return Promise.resolve({
                     id: validBoardId,
@@ -866,11 +926,13 @@ describe("Controller fixes unit tests", () => {
             prisma.membership.findUnique = origMemberFind;
         });
 
-        it("getAllSections queries sections with position and secondary tie-breakers", async () => {
+        it("getAllSections queries sections with position and secondary tie-breakers", async () =>
+        {
             const origBoardFind = prisma.boards.findUnique;
 
             let queryArgs: any = null;
-            prisma.boards.findUnique = mock((args: any) => {
+            prisma.boards.findUnique = mock((args: any) =>
+            {
                 queryArgs = args;
                 return Promise.resolve({
                     id: validBoardId,
@@ -897,11 +959,13 @@ describe("Controller fixes unit tests", () => {
             prisma.boards.findUnique = origBoardFind;
         });
 
-        it("getAllIssues queries issues with position and secondary tie-breakers", async () => {
+        it("getAllIssues queries issues with position and secondary tie-breakers", async () =>
+        {
             const origSectionFind = prisma.sections.findUnique;
 
             let queryArgs: any = null;
-            prisma.sections.findUnique = mock((args: any) => {
+            prisma.sections.findUnique = mock((args: any) =>
+            {
                 queryArgs = args;
                 return Promise.resolve({
                     title: "Backlog",
@@ -928,11 +992,13 @@ describe("Controller fixes unit tests", () => {
             prisma.sections.findUnique = origSectionFind;
         });
 
-        it("issueDetail queries checklists and checklist items with position and secondary tie-breakers", async () => {
+        it("issueDetail queries checklists and checklist items with position and secondary tie-breakers", async () =>
+        {
             const origIssueFind = prisma.issues.findUnique;
 
             let queryArgs: any = null;
-            prisma.issues.findUnique = mock((args: any) => {
+            prisma.issues.findUnique = mock((args: any) =>
+            {
                 queryArgs = args;
                 return Promise.resolve({
                     id: "issue-abc",

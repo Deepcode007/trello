@@ -1,12 +1,15 @@
 import { describe, expect, it } from "bun:test";
-import {
+import
+{
     WebSocketBroadcaster,
     wsBroadcaster,
     formatBoardTopic
 } from "../../src/services/broadcaster";
 
-describe("Backend Broadcaster Singleton and Event-Emitter Integration Tests", () => {
-    it("ensures formatBoardTopic correctly prefixes or preserves board_", () => {
+describe("Backend Broadcaster Singleton and Event-Emitter Integration Tests", () =>
+{
+    it("ensures formatBoardTopic correctly prefixes or preserves board_", () =>
+    {
         expect(formatBoardTopic("board_123")).toBe("board_123");
         expect(formatBoardTopic("123")).toBe("board_123");
         expect(formatBoardTopic("abc-uuid")).toBe("board_abc-uuid");
@@ -21,14 +24,16 @@ describe("Backend Broadcaster Singleton and Event-Emitter Integration Tests", ()
         expect(formatBoardTopic(false as any)).toBe("");
     });
 
-    it("verifies singleton consistency across getInstance() calls", () => {
+    it("verifies singleton consistency across getInstance() calls", () =>
+    {
         const instance1 = WebSocketBroadcaster.getInstance();
         const instance2 = WebSocketBroadcaster.getInstance();
         expect(instance1).toBe(instance2);
         expect(instance1).toBe(wsBroadcaster);
     });
 
-    it("allows registering event listeners on wsBroadcaster", async () => {
+    it("allows registering event listeners on wsBroadcaster", async () =>
+    {
         let broadcastCalled = false;
         let boardEvent: any = null;
 
@@ -53,7 +58,8 @@ describe("Backend Broadcaster Singleton and Event-Emitter Integration Tests", ()
         wsBroadcaster.off("board:test_board_1", onBoard);
     });
 
-    it("broadcast helpers generate correct dictionary shapes", async () => {
+    it("broadcast helpers generate correct dictionary shapes", async () =>
+    {
         let lastEvent: any = null;
         const handler = (evt: any) => { lastEvent = evt; };
         wsBroadcaster.on("board:board_event_test", handler);
@@ -87,7 +93,8 @@ describe("Backend Broadcaster Singleton and Event-Emitter Integration Tests", ()
         wsBroadcaster.off("board:board_event_test", handler);
     });
 
-    it("verifies intra-column card moves (same column, new position) produce card:moved payload", async () => {
+    it("verifies intra-column card moves (same column, new position) produce card:moved payload", async () =>
+    {
         let moveEvent: any = null;
         const handler = (evt: any) => { moveEvent = evt; };
         wsBroadcaster.on("board:board_same_col", handler);
@@ -109,7 +116,8 @@ describe("Backend Broadcaster Singleton and Event-Emitter Integration Tests", ()
         wsBroadcaster.off("board:board_same_col", handler);
     });
 
-    it("verifies list lifecycle broadcasts (list:created, list:updated, list:deleted)", async () => {
+    it("verifies list lifecycle broadcasts (list:created, list:updated, list:deleted)", async () =>
+    {
         const events: any[] = [];
         const handler = (evt: any) => { events.push(evt); };
         wsBroadcaster.on("board:board_list_test", handler);
@@ -140,20 +148,25 @@ describe("Backend Broadcaster Singleton and Event-Emitter Integration Tests", ()
         wsBroadcaster.off("board:board_list_test", handler);
     });
 
-    it("handles non-string, empty, or whitespace boardIds gracefully by returning false without emitting or throwing", async () => {
+    it("handles non-string, empty, or whitespace boardIds gracefully by returning false without emitting or throwing", async () =>
+    {
         const invalidBoardIds = [12345, 0, false, true, null, undefined, {}, [], "", "   "];
-        for (const badId of invalidBoardIds) {
+        for (const badId of invalidBoardIds)
+        {
             const res = await wsBroadcaster.broadcast(badId as any, { type: "test", payload: {} });
             expect(res).toBe(false);
         }
     });
 
-    describe("evictUser and in-memory EvictionHandler", () => {
-        it("invokes registered evictionHandler in-memory directly", async () => {
+    describe("evictUser and in-memory EvictionHandler", () =>
+    {
+        it("invokes registered evictionHandler in-memory directly", async () =>
+        {
             const broadcaster = new WebSocketBroadcaster();
             let calledWith: any = null;
 
-            broadcaster.setEvictionHandler(async (opts) => {
+            broadcaster.setEvictionHandler(async (opts) =>
+            {
                 calledWith = opts;
                 return true;
             });
@@ -167,9 +180,11 @@ describe("Backend Broadcaster Singleton and Event-Emitter Integration Tests", ()
             expect(calledWith.boardIds).toEqual(["b1", "b2"]);
         });
 
-        it("returns false if evictionHandler throws an error", async () => {
+        it("returns false if evictionHandler throws an error", async () =>
+        {
             const broadcaster = new WebSocketBroadcaster();
-            broadcaster.setEvictionHandler(() => {
+            broadcaster.setEvictionHandler(() =>
+            {
                 throw new Error("Eviction crash");
             });
 
@@ -177,7 +192,8 @@ describe("Backend Broadcaster Singleton and Event-Emitter Integration Tests", ()
             expect(ok).toBe(false);
         });
 
-        it("falls back to HTTP IPC endpoint when no handler is configured", async () => {
+        it("falls back to HTTP IPC endpoint when no handler is configured", async () =>
+        {
             const broadcaster = new WebSocketBroadcaster();
             broadcaster.setPort(9999);
 
@@ -185,41 +201,49 @@ describe("Backend Broadcaster Singleton and Event-Emitter Integration Tests", ()
             let fetchUrl = "";
             let fetchBody: any = null;
 
-            globalThis.fetch = ((url: any, opts: any) => {
+            globalThis.fetch = ((url: any, opts: any) =>
+            {
                 fetchUrl = String(url);
                 fetchBody = JSON.parse(opts.body);
                 return Promise.resolve(new Response(JSON.stringify({ success: true, evictedCount: 1 }), { status: 200 }));
             }) as any;
 
-            try {
+            try
+            {
                 const ok = await broadcaster.evictUser("user_http", "org_http", ["b_http"]);
                 expect(ok).toBe(true);
                 expect(fetchUrl).toBe("http://127.0.0.1:9999/internal/evict-user");
                 expect(fetchBody.userId).toBe("user_http");
-            } finally {
+            } finally
+            {
                 globalThis.fetch = origFetch;
             }
         });
 
-        it("returns false when HTTP fallback fails", async () => {
+        it("returns false when HTTP fallback fails", async () =>
+        {
             const broadcaster = new WebSocketBroadcaster();
             broadcaster.setPort(9999);
 
             const origFetch = globalThis.fetch;
             globalThis.fetch = (() => Promise.reject(new Error("Connection refused"))) as any;
 
-            try {
+            try
+            {
                 const ok = await broadcaster.evictUser("user_fail");
                 expect(ok).toBe(false);
-            } finally {
+            } finally
+            {
                 globalThis.fetch = origFetch;
             }
         });
 
-        it("returns false immediately for empty, whitespace, or invalid userId", async () => {
+        it("returns false immediately for empty, whitespace, or invalid userId", async () =>
+        {
             const broadcaster = new WebSocketBroadcaster();
             let handlerCalled = false;
-            broadcaster.setEvictionHandler(() => {
+            broadcaster.setEvictionHandler(() =>
+            {
                 handlerCalled = true;
                 return true;
             });
@@ -233,4 +257,3 @@ describe("Backend Broadcaster Singleton and Event-Emitter Integration Tests", ()
         });
     });
 });
-

@@ -4,7 +4,8 @@ import zod from "zod";
 import { Forbidden, Not_Found, ValidationError } from "../../helpers/errorClass";
 import { wsBroadcaster } from "../../services/broadcaster";
 
-export async function createChecklist(req: Request, res: Response) {
+export async function createChecklist(req: Request, res: Response)
+{
     const paramResult = zod.object({
         issueId: zod.uuid()
     }).safeParse(req.params);
@@ -13,7 +14,8 @@ export async function createChecklist(req: Request, res: Response) {
         title: zod.string().trim().min(1)
     }).safeParse(req.body);
 
-    if (!paramResult.success || !bodyResult.success) {
+    if (!paramResult.success || !bodyResult.success)
+    {
         throw new ValidationError();
     }
 
@@ -68,7 +70,8 @@ export async function createChecklist(req: Request, res: Response) {
     });
 }
 
-export async function addChecklistItem(req: Request, res: Response) {
+export async function addChecklistItem(req: Request, res: Response)
+{
     const paramResult = zod.object({
         checklistId: zod.uuid()
     }).safeParse(req.params);
@@ -78,7 +81,8 @@ export async function addChecklistItem(req: Request, res: Response) {
         dueDate: zod.string().datetime().optional().transform(d => d ? new Date(d) : undefined)
     }).safeParse(req.body);
 
-    if (!paramResult.success || !bodyResult.success) {
+    if (!paramResult.success || !bodyResult.success)
+    {
         throw new ValidationError();
     }
 
@@ -137,7 +141,8 @@ export async function addChecklistItem(req: Request, res: Response) {
     });
 }
 
-export async function updateChecklistItem(req: Request, res: Response) {
+export async function updateChecklistItem(req: Request, res: Response)
+{
     const paramResult = zod.object({
         itemId: zod.uuid()
     }).safeParse(req.params);
@@ -201,7 +206,8 @@ export async function updateChecklistItem(req: Request, res: Response) {
     });
 }
 
-export async function deleteChecklist(req: Request, res: Response) {
+export async function deleteChecklist(req: Request, res: Response)
+{
     const paramResult = zod.object({
         checklistId: zod.uuid()
     }).safeParse(req.params);

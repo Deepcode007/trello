@@ -1,5 +1,6 @@
 import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
-import {
+import
+{
     handleWebSocketClose,
     handleWebSocketMessage,
     setBoardAccessChecker,
@@ -8,15 +9,19 @@ import {
 } from "../src/server";
 import { type WebSocketData, formatBoardTopic, cleanBoardId } from "../src/types/events";
 
-describe("Native Pub/Sub & Board Room Management Tests", () => {
-    beforeEach(() => {
+describe("Native Pub/Sub & Board Room Management Tests", () =>
+{
+    beforeEach(() =>
+    {
         setBoardAccessChecker(() => true);
     });
 
-    afterAll(() => {
+    afterAll(() =>
+    {
         resetBoardAccessChecker();
     });
-    function createMockSocket(userId = "user_456", email?: string, name?: string) {
+    function createMockSocket(userId = "user_456", email?: string, name?: string)
+    {
         const finalEmail = arguments.length > 1 ? email : "bob@test.com";
         const subscriptions = new Set<string>();
         const sentMessages: string[] = [];
@@ -31,25 +36,31 @@ describe("Native Pub/Sub & Board Room Management Tests", () => {
                 subscriptions,
                 connectedAt: Date.now()
             } as WebSocketData,
-            subscribe: mock((topic: string) => {
+            subscribe: mock((topic: string) =>
+            {
                 subscribedTopics.push(topic);
                 return true;
             }),
-            unsubscribe: mock((topic: string) => {
+            unsubscribe: mock((topic: string) =>
+            {
                 unsubscribedTopics.push(topic);
                 return true;
             }),
-            send: mock((msg: string) => {
+            send: mock((msg: string) =>
+            {
                 sentMessages.push(msg);
                 return 1;
             }),
-            getSentMessages() {
+            getSentMessages()
+            {
                 return sentMessages;
             },
-            getSubscribedTopics() {
+            getSubscribedTopics()
+            {
                 return subscribedTopics;
             },
-            getUnsubscribedTopics() {
+            getUnsubscribedTopics()
+            {
                 return unsubscribedTopics;
             }
         };
@@ -57,21 +68,25 @@ describe("Native Pub/Sub & Board Room Management Tests", () => {
         return ws;
     }
 
-    function createMockServer() {
+    function createMockServer()
+    {
         const publishedEvents: { topic: string; message: string }[] = [];
         const server = {
-            publish: mock((topic: string, message: string) => {
+            publish: mock((topic: string, message: string) =>
+            {
                 publishedEvents.push({ topic, message });
                 return 1;
             }),
-            getPublishedEvents() {
+            getPublishedEvents()
+            {
                 return publishedEvents;
             }
         };
         return server;
     }
 
-    it("handles join action by subscribing ws and broadcasting user:joined", () => {
+    it("handles join action by subscribing ws and broadcasting user:joined", () =>
+    {
         const ws = createMockSocket("user_999", "carol@test.com", "Carol Danvers");
         const server = createMockServer();
 
@@ -103,7 +118,8 @@ describe("Native Pub/Sub & Board Room Management Tests", () => {
         expect(joinBroadcast.payload.boardId).toBe("board_123");
     });
 
-    it("user:joined strictly uses authenticated identity (name, email, userId) and completely ignores client-supplied name", () => {
+    it("user:joined strictly uses authenticated identity (name, email, userId) and completely ignores client-supplied name", () =>
+    {
         // Case 1: ws.data.name is present - client-supplied name must be completely ignored
         {
             const ws = createMockSocket("user_101", "alice@example.com", "Alice Real");
@@ -198,7 +214,8 @@ describe("Native Pub/Sub & Board Room Management Tests", () => {
         }
     });
 
-    it("handles subscribe alias for join action", () => {
+    it("handles subscribe alias for join action", () =>
+    {
         const ws = createMockSocket();
         const server = createMockServer();
 
@@ -212,7 +229,8 @@ describe("Native Pub/Sub & Board Room Management Tests", () => {
         expect(sent.type).toBe("joined");
     });
 
-    it("normalizes boardId without board_ prefix", () => {
+    it("normalizes boardId without board_ prefix", () =>
+    {
         const ws = createMockSocket();
         const server = createMockServer();
 
@@ -225,7 +243,8 @@ describe("Native Pub/Sub & Board Room Management Tests", () => {
         expect(ws.data.subscriptions.has("board_uuid-1234")).toBe(true);
     });
 
-    it("sends error if join is missing boardId", () => {
+    it("sends error if join is missing boardId", () =>
+    {
         const ws = createMockSocket();
         const server = createMockServer();
 
@@ -238,7 +257,8 @@ describe("Native Pub/Sub & Board Room Management Tests", () => {
         expect(sent.error).toContain("Missing boardId");
     });
 
-    it("handles leave action by unsubscribing ws and broadcasting user:left", () => {
+    it("handles leave action by unsubscribing ws and broadcasting user:left", () =>
+    {
         const ws = createMockSocket("user_999");
         const server = createMockServer();
 
@@ -271,7 +291,8 @@ describe("Native Pub/Sub & Board Room Management Tests", () => {
         expect(leaveBroadcast.payload.userId).toBe("user_999");
     });
 
-    it("handles ping action with pong response", () => {
+    it("handles ping action with pong response", () =>
+    {
         const ws = createMockSocket();
         const server = createMockServer();
 
@@ -282,7 +303,8 @@ describe("Native Pub/Sub & Board Room Management Tests", () => {
         expect(typeof sent.timestamp).toBe("number");
     });
 
-    it("handles invalid JSON gracefully without throwing", () => {
+    it("handles invalid JSON gracefully without throwing", () =>
+    {
         const ws = createMockSocket();
         const server = createMockServer();
 
@@ -292,9 +314,11 @@ describe("Native Pub/Sub & Board Room Management Tests", () => {
         expect(sent.error).toBe("Invalid JSON message");
     });
 
-    it("handles non-object JSON frames (null, number, string, array) safely without throwing", () => {
+    it("handles non-object JSON frames (null, number, string, array) safely without throwing", () =>
+    {
         const testCases = ["null", "123", '"plain_string"', "[1, 2, 3]"];
-        for (const raw of testCases) {
+        for (const raw of testCases)
+        {
             const ws = createMockSocket();
             const server = createMockServer();
 
@@ -306,9 +330,11 @@ describe("Native Pub/Sub & Board Room Management Tests", () => {
         }
     });
 
-    it("handles non-string boardId for join action safely without throwing", () => {
+    it("handles non-string boardId for join action safely without throwing", () =>
+    {
         const invalidBoardIds = [12345, 0, -1, true, false, { id: "123" }, [1, 2]];
-        for (const badBoardId of invalidBoardIds) {
+        for (const badBoardId of invalidBoardIds)
+        {
             const ws = createMockSocket();
             const server = createMockServer();
 
@@ -324,7 +350,8 @@ describe("Native Pub/Sub & Board Room Management Tests", () => {
             expect(parsed.error).toContain("Invalid boardId");
         }
 
-        for (const emptyBoardId of ["", "   "]) {
+        for (const emptyBoardId of ["", "   "])
+        {
             const ws = createMockSocket();
             const server = createMockServer();
 
@@ -341,9 +368,11 @@ describe("Native Pub/Sub & Board Room Management Tests", () => {
         }
     });
 
-    it("handles non-string boardId for leave action safely without throwing", () => {
+    it("handles non-string boardId for leave action safely without throwing", () =>
+    {
         const invalidBoardIds = [12345, 0, -1, true, false, { id: "123" }, [1, 2]];
-        for (const badBoardId of invalidBoardIds) {
+        for (const badBoardId of invalidBoardIds)
+        {
             const ws = createMockSocket();
             const server = createMockServer();
 
@@ -359,7 +388,8 @@ describe("Native Pub/Sub & Board Room Management Tests", () => {
             expect(parsed.error).toContain("Invalid boardId");
         }
 
-        for (const emptyBoardId of ["", "   "]) {
+        for (const emptyBoardId of ["", "   "])
+        {
             const ws = createMockSocket();
             const server = createMockServer();
 
@@ -376,7 +406,8 @@ describe("Native Pub/Sub & Board Room Management Tests", () => {
         }
     });
 
-    it("handles non-string action safely without throwing", () => {
+    it("handles non-string action safely without throwing", () =>
+    {
         const ws = createMockSocket();
         const server = createMockServer();
 
@@ -391,7 +422,8 @@ describe("Native Pub/Sub & Board Room Management Tests", () => {
         expect(parsed.error).toContain("Unknown action");
     });
 
-    it("broadcasts user:left on connection close for all active subscriptions with cleaned boardId", () => {
+    it("broadcasts user:left on connection close for all active subscriptions with cleaned boardId", () =>
+    {
         const ws = createMockSocket("user_disconnecting");
         const server = createMockServer();
 
@@ -423,10 +455,12 @@ describe("Native Pub/Sub & Board Room Management Tests", () => {
         expect(ws.data.subscriptions.size).toBe(0);
     });
 
-    it("handleWebSocketClose broadcasts user:left with cleaned boardId even if ws.unsubscribe throws", () => {
+    it("handleWebSocketClose broadcasts user:left with cleaned boardId even if ws.unsubscribe throws", () =>
+    {
         const ws = createMockSocket("user_unsub_error", "unsub@test.com", "Unsub Tester");
         // Simulate ws.unsubscribe throwing (e.g. socket already terminated/closed by runtime)
-        ws.unsubscribe = mock(() => {
+        ws.unsubscribe = mock(() =>
+        {
             throw new Error("Cannot unsubscribe: WebSocket connection is already closed");
         });
 
@@ -456,17 +490,20 @@ describe("Native Pub/Sub & Board Room Management Tests", () => {
         expect(ws.data.subscriptions.size).toBe(0);
     });
 
-    it("handleWebSocketClose publishes user:left before calling ws.unsubscribe in exact sequence", () => {
+    it("handleWebSocketClose publishes user:left before calling ws.unsubscribe in exact sequence", () =>
+    {
         const ws = createMockSocket("user_seq", "seq@test.com", "Sequence Tester");
         const server = createMockServer();
         const callOrder: string[] = [];
 
-        server.publish = mock((topic: string, message: string) => {
+        server.publish = mock((topic: string, message: string) =>
+        {
             callOrder.push(`publish:${topic}`);
             return 1;
         });
 
-        ws.unsubscribe = mock((topic: string) => {
+        ws.unsubscribe = mock((topic: string) =>
+        {
             callOrder.push(`unsubscribe:${topic}`);
             return true;
         });
@@ -478,15 +515,18 @@ describe("Native Pub/Sub & Board Room Management Tests", () => {
         expect(callOrder).toEqual(["publish:board_order_test", "unsubscribe:board_order_test"]);
     });
 
-    it("handleWebSocketClose continues broadcasting remaining topics even if server.publish throws on one topic", () => {
+    it("handleWebSocketClose continues broadcasting remaining topics even if server.publish throws on one topic", () =>
+    {
         const ws = createMockSocket("user_partial_fail", "partial@test.com", "Partial Fail Tester");
         let publishAttempts = 0;
         const successfulTopics: string[] = [];
 
         const server = {
-            publish: mock((topic: string, message: string) => {
+            publish: mock((topic: string, message: string) =>
+            {
                 publishAttempts++;
-                if (topic === "board_fail") {
+                if (topic === "board_fail")
+                {
                     throw new Error("Simulated socket write failure on board_fail");
                 }
                 successfulTopics.push(topic);
@@ -504,7 +544,8 @@ describe("Native Pub/Sub & Board Room Management Tests", () => {
         expect(ws.data.subscriptions.size).toBe(0);
     });
 
-    it("handleWebSocketClose and handleWebSocketMessage handle missing ws.data gracefully", () => {
+    it("handleWebSocketClose and handleWebSocketMessage handle missing ws.data gracefully", () =>
+    {
         const server = createMockServer();
 
         // Socket with missing ws.data or subscriptions must not throw
@@ -521,7 +562,8 @@ describe("Native Pub/Sub & Board Room Management Tests", () => {
         expect(sent.error).toContain("Unauthenticated socket session");
     });
 
-    it("prevents duplicate subscriptions and does not re-broadcast user:joined on repeated join", () => {
+    it("prevents duplicate subscriptions and does not re-broadcast user:joined on repeated join", () =>
+    {
         const ws = createMockSocket("user_repeat", "repeat@test.com");
         const server = createMockServer();
 
@@ -556,7 +598,8 @@ describe("Native Pub/Sub & Board Room Management Tests", () => {
         expect(secondAck.alreadySubscribed).toBe(true);
     });
 
-    it("subscribes strictly to canonical topic once without duplicate raw-and-prefixed topic subscriptions", () => {
+    it("subscribes strictly to canonical topic once without duplicate raw-and-prefixed topic subscriptions", () =>
+    {
         const ws = createMockSocket("user_canonical");
         const server = createMockServer();
 
@@ -577,7 +620,8 @@ describe("Native Pub/Sub & Board Room Management Tests", () => {
         expect(published[0]!.topic).toBe("board_raw_123");
     });
 
-    it("formatBoardTopic and cleanBoardId helpers handle valid, empty, non-string, and whitespace inputs", () => {
+    it("formatBoardTopic and cleanBoardId helpers handle valid, empty, non-string, and whitespace inputs", () =>
+    {
         expect(formatBoardTopic("board_123")).toBe("board_123");
         expect(formatBoardTopic("123")).toBe("board_123");
         expect(formatBoardTopic("  board_123  ")).toBe("board_123");
@@ -604,7 +648,8 @@ describe("Native Pub/Sub & Board Room Management Tests", () => {
         expect(cleanBoardId({} as any)).toBe("");
     });
 
-    it("rejects join action when user is not an accepted member of the board's organization", async () => {
+    it("rejects join action when user is not an accepted member of the board's organization", async () =>
+    {
         setBoardAccessChecker((_userId, _boardId) => false);
         const ws = createMockSocket("attacker_user", "attacker@evil.com");
         const server = createMockServer();
@@ -630,8 +675,10 @@ describe("Native Pub/Sub & Board Room Management Tests", () => {
         expect(errorMsg.boardId).toBe("private_board_456");
     });
 
-    it("allows join action when user is authorized by async checker", async () => {
-        setBoardAccessChecker(async (userId, boardId) => {
+    it("allows join action when user is authorized by async checker", async () =>
+    {
+        setBoardAccessChecker(async (userId, boardId) =>
+        {
             return userId === "member_1" && boardId === "board_allowed";
         });
         const ws = createMockSocket("member_1", "member1@test.com");
@@ -647,7 +694,8 @@ describe("Native Pub/Sub & Board Room Management Tests", () => {
         expect(server.getPublishedEvents().length).toBe(1);
     });
 
-    it("defaultCheckBoardAccess returns false for empty boardId or userId", async () => {
+    it("defaultCheckBoardAccess returns false for empty boardId or userId", async () =>
+    {
         expect(await defaultCheckBoardAccess("", "board_1")).toBe(false);
         expect(await defaultCheckBoardAccess("user_1", "")).toBe(false);
     });

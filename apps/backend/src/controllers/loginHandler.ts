@@ -7,45 +7,50 @@ import { SigninSchema } from "../models/signin";
 
 export async function loginHandler(req: Request, res: Response)
 {
-	try {
-		const result = SigninSchema.safeParse(req.body);
-		if (!result.success) {
-			return res.status(400).json({
-				success: false,
-				error: "Invalid inputs"
-			});
-		}
+    try
+    {
+        const result = SigninSchema.safeParse(req.body);
+        if (!result.success)
+        {
+            return res.status(400).json({
+                success: false,
+                error: "Invalid inputs"
+            });
+        }
 
-		let user = await prisma.user.findUnique({
-			where: {
-				email: result.data.email
-			}
-		})
+        let user = await prisma.user.findUnique({
+            where: {
+                email: result.data.email
+            }
+        })
 
-		if (!user) {
-			return res.status(404).json({
-				success: false,
-				error: "User not found"
-			})
-		}
+        if (!user)
+        {
+            return res.status(404).json({
+                success: false,
+                error: "User not found"
+            })
+        }
 
-		if (!await bcrypt.compare(result.data.password, user.password)) {
-			return res.status(401).json({
-				success: false,
-				error: "Invalid Password"
-			})
-		}
+        if (!await bcrypt.compare(result.data.password, user.password))
+        {
+            return res.status(401).json({
+                success: false,
+                error: "Invalid Password"
+            })
+        }
 
-		return res.status(200).json({
-			success: true,
-			data: token(user.email, user.id)
-		})
+        return res.status(200).json({
+            success: true,
+            data: token(user.email, user.id)
+        })
 
-	}
-	catch (e) {
-		return res.status(500).json({
-			success: false,
-			error: "Internal Server error"
-		})
-	}
+    }
+    catch (e)
+    {
+        return res.status(500).json({
+            success: false,
+            error: "Internal Server error"
+        })
+    }
 }

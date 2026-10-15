@@ -4,7 +4,7 @@ import zod from "zod"
 import { Forbidden, Not_Found, ValidationError } from "../../helpers/errorClass";
 import { wsBroadcaster } from "../../services/broadcaster";
 
-export async function renameBoard(req: Request, res: Response)
+export async function updateBoard(req: Request, res: Response)
 {
     const result = zod.object({
         boardId: zod.uuid()
@@ -19,10 +19,7 @@ export async function renameBoard(req: Request, res: Response)
         message: "At least one field must be provided"
     }).safeParse(req.body);
 
-    if (!result.success || !result2.success)
-    {
-        throw new ValidationError();
-    }
+    if (!result.success || !result2.success) throw new ValidationError();
 
     const user = await prisma.boards.findUnique({
         where: {

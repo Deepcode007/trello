@@ -3,7 +3,8 @@ import { createWebSocketServer } from "./src/server";
 import { wsBroadcaster, WebSocketBroadcaster } from "./src/services/broadcaster";
 
 const result = envSchema.safeParse(process.env);
-if (!result.success) {
+if (!result.success)
+{
     console.error("WS Env Problem:", result.error.format());
     process.exit(1);
 }
@@ -14,8 +15,10 @@ const jwtSecret = WS_env.jwt_key;
 
 export let server: ReturnType<typeof createWebSocketServer> | null = null;
 
-export function getOrCreateServer(opts?: { port?: number; jwtSecret?: string }) {
-    if (!server) {
+export function getOrCreateServer(opts?: { port?: number; jwtSecret?: string })
+{
+    if (!server)
+    {
         server = createWebSocketServer({
             port: opts?.port ?? port,
             jwtSecret: opts?.jwtSecret ?? jwtSecret
@@ -24,12 +27,14 @@ export function getOrCreateServer(opts?: { port?: number; jwtSecret?: string }) 
     return server;
 }
 
-if (import.meta.main) {
+if (import.meta.main)
+{
     server = getOrCreateServer();
     console.log(`WebSocket server listening on port ${server.port}`);
 
     // Optional: In single-process dual-server mode, also boot Express
-    if (process.env.START_EXPRESS === "true" || process.env.DUAL_SERVER === "true") {
+    if (process.env.START_EXPRESS === "true" || process.env.DUAL_SERVER === "true")
+    {
         console.log("Starting Express in the same process...");
         await import("backend");
     }

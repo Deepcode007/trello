@@ -54,12 +54,15 @@ export async function deleteSection(req: Request, res: Response)
     const rawTarget = req.query.targetSectionId ?? (req.body && typeof req.body === "object" ? req.body.targetSectionId : undefined);
     const targetSectionId = typeof rawTarget === "string" ? rawTarget.trim() : undefined;
 
-    if (issueCount > 0) {
-        if (!targetSectionId) {
+    if (issueCount > 0)
+    {
+        if (!targetSectionId)
+        {
             throw new ValidationError("targetSectionId is required to reassign issues when deleting a non-empty section");
         }
 
-        if (targetSectionId === result.data.sectionId) {
+        if (targetSectionId === result.data.sectionId)
+        {
             throw new ValidationError("targetSectionId cannot be the same section being deleted");
         }
 
@@ -68,7 +71,8 @@ export async function deleteSection(req: Request, res: Response)
             select: { id: true, boardId: true, title: true }
         });
 
-        if (!targetSection || targetSection.boardId !== user.boardId) {
+        if (!targetSection || targetSection.boardId !== user.boardId)
+        {
             throw new ValidationError("targetSectionId does not exist on this board");
         }
     }
@@ -76,8 +80,10 @@ export async function deleteSection(req: Request, res: Response)
     let reassignedIssues: { id: string; position: number }[] = [];
     let deletedTitle = "";
 
-    await prisma.$transaction(async (tx) => {
-        if (issueCount > 0 && targetSectionId) {
+    await prisma.$transaction(async (tx) =>
+    {
+        if (issueCount > 0 && targetSectionId)
+        {
             reassignedIssues = await tx.issues.findMany({
                 where: { sectionId: result.data.sectionId },
                 select: { id: true, position: true }
@@ -97,8 +103,10 @@ export async function deleteSection(req: Request, res: Response)
         deletedTitle = deleted.title;
     });
 
-    if (targetSectionId && reassignedIssues.length > 0) {
-        for (const issue of reassignedIssues) {
+    if (targetSectionId && reassignedIssues.length > 0)
+    {
+        for (const issue of reassignedIssues)
+        {
             wsBroadcaster.broadcastCardMoved(user.boardId, {
                 cardId: issue.id,
                 sourceList: result.data.sectionId,

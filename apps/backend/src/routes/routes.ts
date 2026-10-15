@@ -3,7 +3,7 @@ import { createBoard } from "../controllers/board/createBoard";
 import { deleteBoard } from "../controllers/board/deleteBoard";
 import { getBoardDetails } from "../controllers/board/getaBoard";
 import { getAllBoards } from "../controllers/board/getBoards";
-import { renameBoard } from "../controllers/board/renameBoard";
+import { updateBoard } from "../controllers/board/updateBoard";
 import { addComment } from "../controllers/comments/addComment";
 import { deleteComment } from "../controllers/comments/deleteComment";
 import { editComment } from "../controllers/comments/editComment";
@@ -30,7 +30,7 @@ import { profileHandler } from "../controllers/profileHandler";
 import { createSection } from "../controllers/sections/createSection";
 import { deleteSection } from "../controllers/sections/deleteSection";
 import { getAllSections } from "../controllers/sections/getAllSections";
-import { renameSection } from "../controllers/sections/renameSectioon";
+import { renameSection } from "../controllers/sections/renameSection";
 import { signupHandler } from "../controllers/signupHandler";
 import { asyncHandler } from "../helpers/asyncHandler";
 import { auth } from "../middlewares/auth";
@@ -95,7 +95,7 @@ app.get("/api/boards/:boardId", asyncHandler(getBoardDetails));
 
 
 // Rename or update board details.
-app.put("/api/boards/:boardId", asyncHandler(renameBoard));
+app.put("/api/boards/:boardId", asyncHandler(updateBoard));
 
 // Delete a board and its associated data.
 app.delete("/api/boards/:boardId", asyncHandler(deleteBoard));
@@ -130,21 +130,16 @@ app.post("/api/sections/:sectionId/cards", asyncHandler(createIssue));
 
 // 	Get full details of a specific issue.
 app.get("/api/issues/:issueId", asyncHandler(issueDetail));
+app.get("/api/cards/:issueId", asyncHandler(issueDetail));
 
 // Update an issue (edit text, or move to a new sectionId).
-app.put("/api/issues/:issueId", asyncHandler(updateIssue));
 app.patch("/api/issues/:issueId", asyncHandler(updateIssue));
 app.patch("/api/cards/:issueId", asyncHandler(updateIssue));
 app.patch("/api/cards/:issueId/move", asyncHandler(updateIssue));
-app.put("/api/cards/:issueId", asyncHandler(updateIssue));
-app.get("/api/cards/:issueId", asyncHandler(issueDetail));
 
 // Card aliases with :id
-app.patch("/api/cards/:id", asyncHandler(updateIssue));
 app.patch("/api/cards/:id/move", asyncHandler(updateIssue));
-app.put("/api/cards/:id", asyncHandler(updateIssue));
-app.get("/api/cards/:id", asyncHandler(issueDetail));
-app.delete("/api/cards/:id", asyncHandler(deleteIssue));
+app.patch("/api/cards/:id", asyncHandler(updateIssue));
 
 // Delete an issue.
 app.delete("/api/issues/:issueId", asyncHandler(deleteIssue));
@@ -188,6 +183,3 @@ app.post("/api/issues/:issueId/checklists", asyncHandler(createChecklist));
 app.post("/api/checklists/:checklistId/items", asyncHandler(addChecklistItem));
 app.patch("/api/checklists/items/:itemId", asyncHandler(updateChecklistItem));
 app.delete("/api/checklists/:checklistId", asyncHandler(deleteChecklist));
-
-
-

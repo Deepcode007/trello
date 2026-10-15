@@ -26,7 +26,7 @@ type comment = {
 };
 
 type SingleCommentWithoutBoard = Omit<comment, 'issue'> & {
-  issue: Omit<comment['issue'], 'board'>;
+    issue: Omit<comment['issue'], 'board'>;
 };
 
 

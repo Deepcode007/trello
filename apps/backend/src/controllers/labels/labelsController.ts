@@ -4,7 +4,8 @@ import zod from "zod";
 import { Forbidden, Not_Found, ValidationError } from "../../helpers/errorClass";
 import { wsBroadcaster } from "../../services/broadcaster";
 
-export async function createLabel(req: Request, res: Response) {
+export async function createLabel(req: Request, res: Response)
+{
     const paramResult = zod.object({
         boardId: zod.uuid()
     }).safeParse(req.params);
@@ -14,9 +15,7 @@ export async function createLabel(req: Request, res: Response) {
         color: zod.string().trim().min(1)
     }).safeParse(req.body);
 
-    if (!paramResult.success || !bodyResult.success) {
-        throw new ValidationError();
-    }
+    if (!paramResult.success || !bodyResult.success) throw new ValidationError();
 
     const board = await prisma.boards.findUnique({
         where: { id: paramResult.data.boardId },
@@ -57,7 +56,8 @@ export async function createLabel(req: Request, res: Response) {
     });
 }
 
-export async function getLabels(req: Request, res: Response) {
+export async function getLabels(req: Request, res: Response)
+{
     const paramResult = zod.object({
         boardId: zod.uuid()
     }).safeParse(req.params);
@@ -94,7 +94,8 @@ export async function getLabels(req: Request, res: Response) {
     });
 }
 
-export async function attachLabel(req: Request, res: Response) {
+export async function attachLabel(req: Request, res: Response)
+{
     const paramResult = zod.object({
         issueId: zod.uuid()
     }).safeParse(req.params);
@@ -160,7 +161,8 @@ export async function attachLabel(req: Request, res: Response) {
     });
 }
 
-export async function detachLabel(req: Request, res: Response) {
+export async function detachLabel(req: Request, res: Response)
+{
     const paramResult = zod.object({
         issueId: zod.uuid(),
         labelId: zod.uuid()

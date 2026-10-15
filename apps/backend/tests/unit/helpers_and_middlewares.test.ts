@@ -1,7 +1,8 @@
 import { describe, expect, it } from "bun:test";
 import jwt from "jsonwebtoken";
 import { buildCommentTree } from "../../src/helpers/commentTree";
-import {
+import
+{
     AppError,
     ValidationError,
     Unauthorised,
@@ -272,7 +273,7 @@ describe("Helpers, Middlewares, and Models Tests", () =>
 
             const req = { headers: {} } as any;
 
-            auth(req, res, () => {});
+            auth(req, res, () => { });
 
             expect(capturedStatus).toBe(401);
             expect(capturedJson.error).toBe("User unauthorised");
@@ -286,7 +287,7 @@ describe("Helpers, Middlewares, and Models Tests", () =>
                 status: (code: number) =>
                 {
                     capturedStatus = code;
-                    return { json: () => {} };
+                    return { json: () => { } };
                 }
             } as any;
 
@@ -320,7 +321,7 @@ describe("Helpers, Middlewares, and Models Tests", () =>
 
             const req = { headers: { authorization: "Bearer invalid.jwt.token" } } as any;
 
-            auth(req, res, () => {});
+            auth(req, res, () => { });
 
             expect(capturedStatus).toBe(401);
             expect(capturedJson.error).toBe("User unauthorised");

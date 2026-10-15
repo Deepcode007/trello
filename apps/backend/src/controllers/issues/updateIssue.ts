@@ -19,8 +19,8 @@ export async function updateIssue(req: Request, res: Response)
         position: zod.number().optional(),
         description: zod.string().optional(),
         priority: zod.enum(["low", "medium", "high", "urgent"]).optional(),
-        dueDate: zod.string().datetime().nullable().optional().transform(d => d ? new Date(d) : d === null ? null : undefined),
-        startDate: zod.string().datetime().nullable().optional().transform(d => d ? new Date(d) : d === null ? null : undefined),
+        dueDate: zod.iso.datetime().nullable().optional().transform(d => d ? new Date(d) : d === null ? null : undefined),
+        startDate: zod.iso.datetime().nullable().optional().transform(d => d ? new Date(d) : d === null ? null : undefined),
         isArchived: zod.boolean().optional()
     }).safeParse(req.body);
 
@@ -113,7 +113,8 @@ export async function updateIssue(req: Request, res: Response)
         result2.data.startDate !== undefined ||
         result2.data.isArchived !== undefined;
 
-    if (isMove) {
+    if (isMove)
+    {
         wsBroadcaster.broadcastCardMoved(issue.boardId, {
             cardId: updated.id,
             sourceList: issue.sectionId,
@@ -122,7 +123,8 @@ export async function updateIssue(req: Request, res: Response)
         });
     }
 
-    if (isEdit) {
+    if (isEdit)
+    {
         const editUpdates: Record<string, unknown> = {};
         if (result2.data.title !== undefined) editUpdates.title = result2.data.title;
         if (result2.data.gh_url !== undefined) editUpdates.gh_url = result2.data.gh_url;

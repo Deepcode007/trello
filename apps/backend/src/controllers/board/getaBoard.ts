@@ -43,7 +43,7 @@ export async function getBoardDetails(req: Request, res: Response)
             orgId: true
         }
     })
-    
+
     if (!board) throw new Not_Found("Org not found/invalid Org Id");
 
     const user = await prisma.membership.findUnique({
@@ -55,7 +55,7 @@ export async function getBoardDetails(req: Request, res: Response)
             accepted: true
         }
     })
-    
+
     if (!user) throw new Forbidden("Member access only");
 
 

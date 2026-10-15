@@ -1,25 +1,31 @@
 import jwt, { type JwtPayload } from "backend/src/helpers/jwt";
 
-export interface AuthenticatedUser {
+export interface AuthenticatedUser
+{
     userId: string;
     email?: string;
     name?: string;
     payload: JwtPayload;
 }
 
-export function parseCookies(cookieHeader: string | null | undefined): Record<string, string> {
+export function parseCookies(cookieHeader: string | null | undefined): Record<string, string>
+{
     const cookies: Record<string, string> = {};
     if (!cookieHeader) return cookies;
 
     const pairs = cookieHeader.split(";");
-    for (const pair of pairs) {
+    for (const pair of pairs)
+    {
         const index = pair.indexOf("=");
-        if (index > 0) {
+        if (index > 0)
+        {
             const key = pair.slice(0, index).trim();
             const val = pair.slice(index + 1).trim();
-            try {
+            try
+            {
                 cookies[key] = decodeURIComponent(val);
-            } catch {
+            } catch
+            {
                 cookies[key] = val;
             }
         }
@@ -27,35 +33,42 @@ export function parseCookies(cookieHeader: string | null | undefined): Record<st
     return cookies;
 }
 
-export function extractSubprotocol(req: Request): string | undefined {
+export function extractSubprotocol(req: Request): string | undefined
+{
     const secProtocol = req.headers.get("sec-websocket-protocol");
     if (!secProtocol) return undefined;
     const parts = secProtocol.split(",").map(p => p.trim());
     return parts[0] || undefined;
 }
 
-export function extractToken(req: Request): string | null {
+export function extractToken(req: Request): string | null
+{
     // 1. Authorization Header (Bearer <token> or raw <token>)
     const authHeader = req.headers.get("authorization");
-    if (authHeader) {
+    if (authHeader)
+    {
         const parts = authHeader.trim().split(/\s+/);
-        if (parts.length === 2 && parts[0]?.toLowerCase() === "bearer") {
+        if (parts.length === 2 && parts[0]?.toLowerCase() === "bearer")
+        {
             return parts[1] ?? null;
-        } else if (parts.length === 1 && parts[0]) {
+        } else if (parts.length === 1 && parts[0])
+        {
             return parts[0];
         }
     }
 
     // 2. Cookie Header (token, auth_token, jwt, session, etc.)
     const cookieHeader = req.headers.get("cookie");
-    if (cookieHeader) {
+    if (cookieHeader)
+    {
         const cookies = parseCookies(cookieHeader);
         const token = cookies.token || cookies.auth_token || cookies.jwt || cookies.session || cookies.session_token;
         if (token) return token;
     }
 
     // 3. Query string (?token=... or ?auth=... or ?jwt=... or ?access_token=...)
-    try {
+    try
+    {
         const url = new URL(req.url);
         let queryToken = url.searchParams.get("token") ||
             url.searchParams.get("auth") ||
@@ -63,29 +76,37 @@ export function extractToken(req: Request): string | null {
             url.searchParams.get("access_token") ||
             url.searchParams.get("authorization");
 
-        if (queryToken) {
-            if (queryToken.toLowerCase().startsWith("bearer ")) {
+        if (queryToken)
+        {
+            if (queryToken.toLowerCase().startsWith("bearer "))
+            {
                 queryToken = queryToken.slice(7).trim();
             }
             if (queryToken) return queryToken;
         }
-    } catch {
+    } catch
+    {
         // invalid URL structure
     }
 
     // 4. Sec-WebSocket-Protocol (e.g. "bearer, <token>" or "<token>" or "access_token, <token>")
     const secProtocol = req.headers.get("sec-websocket-protocol");
-    if (secProtocol) {
+    if (secProtocol)
+    {
         const parts = secProtocol.split(",").map(p => p.trim());
-        if (parts.length >= 2) {
+        if (parts.length >= 2)
+        {
             const first = parts[0]?.toLowerCase();
-            if ((first === "bearer" || first === "token" || first === "access_token") && parts[1]) {
+            if ((first === "bearer" || first === "token" || first === "access_token") && parts[1])
+            {
                 return parts[1];
             }
         }
         // Check if any part is a valid JWT (3 dot-separated segments)
-        for (const part of parts) {
-            if (part && part.split(".").length === 3) {
+        for (const part of parts)
+        {
+            if (part && part.split(".").length === 3)
+            {
                 return part;
             }
         }
@@ -94,11 +115,13 @@ export function extractToken(req: Request): string | null {
     return null;
 }
 
-export function authenticateRequest(req: Request, jwtSecret: string): AuthenticatedUser | null {
+export function authenticateRequest(req: Request, jwtSecret: string): AuthenticatedUser | null
+{
     const token = extractToken(req);
     if (!token) return null;
 
-    try {
+    try
+    {
         const decoded = jwt.verify(token, jwtSecret) as JwtPayload;
         if (!decoded || typeof decoded !== "object") return null;
 
@@ -122,7 +145,8 @@ export function authenticateRequest(req: Request, jwtSecret: string): Authentica
             name,
             payload: decoded
         };
-    } catch {
+    } catch
+    {
         return null;
     }
 }

@@ -3,7 +3,8 @@ import type { Request, Response } from "express";
 import zod from "zod";
 import { Forbidden, Not_Found, ValidationError } from "../../helpers/errorClass";
 
-export async function getBoardEvents(req: Request, res: Response) {
+export async function getBoardEvents(req: Request, res: Response)
+{
     const boardIdParam = req.params.boardId ?? req.params.id;
     const paramResult = zod.object({
         boardId: zod.uuid()
@@ -14,7 +15,8 @@ export async function getBoardEvents(req: Request, res: Response) {
         limit: zod.string().optional().transform(val => val ? Math.min(Math.max(Number(val), 1), 500) : 100)
     }).safeParse(req.query);
 
-    if (!paramResult.success || !queryResult.success) {
+    if (!paramResult.success || !queryResult.success)
+    {
         throw new ValidationError();
     }
 

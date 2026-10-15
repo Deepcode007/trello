@@ -81,7 +81,8 @@ export async function deleteUserHandler(req: Request, res: Response)
 
     const boardIds = orgBoards.map(b => b.id);
 
-    for (const b of orgBoards) {
+    for (const b of orgBoards)
+    {
         wsBroadcaster.broadcast(b.id, {
             type: "board:member_evicted",
             payload: {
@@ -93,11 +94,14 @@ export async function deleteUserHandler(req: Request, res: Response)
     }
 
     // Layer 2: Forcibly terminate evicted user's active WebSocket connections for this organization
-    try {
-        if (typeof wsBroadcaster.evictUser === "function") {
+    try
+    {
+        if (typeof wsBroadcaster.evictUser === "function")
+        {
             await wsBroadcaster.evictUser(user_found.userId, result.data.orgId, boardIds);
         }
-    } catch (err) {
+    } catch (err)
+    {
         console.error("Failed to evict user WebSocket connections:", err);
     }
 

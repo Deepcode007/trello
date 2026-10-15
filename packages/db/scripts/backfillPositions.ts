@@ -1,7 +1,9 @@
 import { prisma } from "../db";
 
-export async function backfillPositions(): Promise<{ success: boolean; error?: string }> {
-    try {
+export async function backfillPositions(): Promise<{ success: boolean; error?: string }>
+{
+    try
+    {
         await prisma.$executeRawUnsafe(`
             WITH ranked_sections AS (
                 SELECT "id", ROW_NUMBER() OVER (PARTITION BY "boardId" ORDER BY "createdAt" ASC, "id" ASC) * 1000.0 AS new_pos
@@ -27,17 +29,22 @@ export async function backfillPositions(): Promise<{ success: boolean; error?: s
         `);
 
         return { success: true };
-    } catch (err: any) {
+    } catch (err: any)
+    {
         return { success: false, error: err?.message || String(err) };
     }
 }
 
-if (import.meta.main) {
-    backfillPositions().then((res) => {
-        if (res.success) {
+if (import.meta.main)
+{
+    backfillPositions().then((res) =>
+    {
+        if (res.success)
+        {
             console.log("Positions backfilled successfully.");
             process.exit(0);
-        } else {
+        } else
+        {
             console.error("Backfill failed:", res.error);
             process.exit(1);
         }

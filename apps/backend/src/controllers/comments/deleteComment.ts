@@ -53,7 +53,7 @@ export async function deleteComment(req: Request, res: Response)
 
     if (!comment) throw new Not_Found("Comment not found");
     if (comment.issue.board.org.members.length === 0) throw new Forbidden("Members Only");
-    
+
     const isAdmin = comment.issue.board.org.members[0]?.role === "admin";
     if (comment.userId !== req.id && !isAdmin) throw new Forbidden("Author/Admin Only");
 

@@ -17,8 +17,8 @@ export async function createIssue(req: Request, res: Response)
         position: zod.number().optional(),
         description: zod.string().optional(),
         priority: zod.enum(["low", "medium", "high", "urgent"]).optional(),
-        dueDate: zod.string().datetime().optional().transform(d => d ? new Date(d) : undefined),
-        startDate: zod.string().datetime().optional().transform(d => d ? new Date(d) : undefined)
+        dueDate: zod.iso.datetime().optional().transform(d => d ? new Date(d) : undefined),
+        startDate: zod.iso.datetime().optional().transform(d => d ? new Date(d) : undefined)
     }).safeParse(req.body);
 
     if (!result.success || !result2.success) throw new ValidationError();
@@ -54,12 +54,14 @@ export async function createIssue(req: Request, res: Response)
     });
 
     if (!section) throw new Not_Found("Section not found");
-    if (section.boardId !== result2.data.boardId) {
+    if (section.boardId !== result2.data.boardId)
+    {
         throw new ValidationError("Section belongs to a different board");
     }
 
     let position = result2.data.position;
-    if (position === undefined) {
+    if (position === undefined)
+    {
         const count = await prisma.issues.count({
             where: { sectionId: result.data.sectionId }
         });

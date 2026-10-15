@@ -8,12 +8,13 @@ import { updateRoleHandler } from "../../src/controllers/organisation/updateRole
 import { UpdateOrgHandler } from "../../src/controllers/organisation/updateDetails";
 import { inviteUserHandler } from "../../src/controllers/organisation/addUser";
 import { deleteComment } from "../../src/controllers/comments/deleteComment";
-import { renameBoard } from "../../src/controllers/board/renameBoard";
+import { updateBoard } from "../../src/controllers/board/updateBoard";
 import { deleteBoard } from "../../src/controllers/board/deleteBoard";
 import { addComment } from "../../src/controllers/comments/addComment";
 import { wsBroadcaster } from "../../src/services/broadcaster";
 
-describe("Empirical Challenger Verification Suite", () => {
+describe("Empirical Challenger Verification Suite", () =>
+{
     const validBoardId = "11111111-1111-4111-8111-111111111111";
     const validOrgId = "22222222-2222-4222-8222-222222222222";
     const validIssueId = "33333333-3333-4333-8333-333333333333";
@@ -21,15 +22,18 @@ describe("Empirical Challenger Verification Suite", () => {
     const adminUserId = "admin-user-001";
     const normalUserId = "normal-user-002";
 
-    function createMockRes() {
+    function createMockRes()
+    {
         const res: any = {};
         res.statusCode = 200;
         res.body = null;
-        res.status = mock((code: number) => {
+        res.status = mock((code: number) =>
+        {
             res.statusCode = code;
             return res;
         });
-        res.json = mock((payload: any) => {
+        res.json = mock((payload: any) =>
+        {
             res.body = payload;
             return res;
         });
@@ -39,20 +43,24 @@ describe("Empirical Challenger Verification Suite", () => {
     // -------------------------------------------------------------
     // Finding API-01 Verification: Board id in Projections
     // -------------------------------------------------------------
-    describe("API-01: Board id in getAllBoards and getBoardDetails", () => {
+    describe("API-01: Board id in getAllBoards and getBoardDetails", () =>
+    {
         const origOrgFindUnique = prisma.orgs.findUnique;
         const origBoardFindUnique = prisma.boards.findUnique;
         const origMembershipFindUnique = prisma.membership.findUnique;
 
-        afterEach(() => {
+        afterEach(() =>
+        {
             prisma.orgs.findUnique = origOrgFindUnique;
             prisma.boards.findUnique = origBoardFindUnique;
             prisma.membership.findUnique = origMembershipFindUnique;
         });
 
-        it("getAllBoards query selection explicitly includes id field", async () => {
+        it("getAllBoards query selection explicitly includes id field", async () =>
+        {
             let capturedSelect: any = null;
-            prisma.orgs.findUnique = mock((args: any) => {
+            prisma.orgs.findUnique = mock((args: any) =>
+            {
                 capturedSelect = args.select;
                 return Promise.resolve({
                     id: validOrgId,
@@ -81,9 +89,11 @@ describe("Empirical Challenger Verification Suite", () => {
             expect(res.body.data[0].title).toBe("Sprint 1");
         });
 
-        it("getBoardDetails query selection explicitly includes id field", async () => {
+        it("getBoardDetails query selection explicitly includes id field", async () =>
+        {
             let capturedSelect: any = null;
-            prisma.boards.findUnique = mock((args: any) => {
+            prisma.boards.findUnique = mock((args: any) =>
+            {
                 capturedSelect = args.select;
                 return Promise.resolve({
                     id: validBoardId,
@@ -116,16 +126,19 @@ describe("Empirical Challenger Verification Suite", () => {
     // -------------------------------------------------------------
     // Finding API-02 Verification: 200 on Empty Comments & Auth Order
     // -------------------------------------------------------------
-    describe("API-02: getAllComments empty 200 and auth ordering", () => {
+    describe("API-02: getAllComments empty 200 and auth ordering", () =>
+    {
         const origFindMany = prisma.comments.findMany;
         const origIssueFindUnique = prisma.issues.findUnique;
 
-        afterEach(() => {
+        afterEach(() =>
+        {
             prisma.comments.findMany = origFindMany;
             prisma.issues.findUnique = origIssueFindUnique;
         });
 
-        it("returns HTTP 200 with empty array when comment list is empty for valid member", async () => {
+        it("returns HTTP 200 with empty array when comment list is empty for valid member", async () =>
+        {
             prisma.issues.findUnique = mock(() => Promise.resolve({
                 board: {
                     org: {
@@ -144,7 +157,8 @@ describe("Empirical Challenger Verification Suite", () => {
             expect(res.body.data).toEqual([]);
         });
 
-        it("checks org membership first and rejects unauthorized user with 403 Forbidden even on 0 comments", async () => {
+        it("checks org membership first and rejects unauthorized user with 403 Forbidden even on 0 comments", async () =>
+        {
             prisma.issues.findUnique = mock(() => Promise.resolve({
                 board: {
                     org: {
@@ -163,14 +177,17 @@ describe("Empirical Challenger Verification Suite", () => {
     // -------------------------------------------------------------
     // Finding API-03 Verification: Route Param Mismatch in issueDetail
     // -------------------------------------------------------------
-    describe("API-03: issueDetail param resolution on :id route", () => {
+    describe("API-03: issueDetail param resolution on :id route", () =>
+    {
         const origFindUnique = prisma.issues.findUnique;
 
-        afterEach(() => {
+        afterEach(() =>
+        {
             prisma.issues.findUnique = origFindUnique;
         });
 
-        it("succeeds validation when route param is :id (from /api/cards/:id)", async () => {
+        it("succeeds validation when route param is :id (from /api/cards/:id)", async () =>
+        {
             prisma.issues.findUnique = mock(() => Promise.resolve({
                 id: validIssueId,
                 title: "Card 1",
@@ -197,7 +214,8 @@ describe("Empirical Challenger Verification Suite", () => {
             expect(res.body.data.id).toBe(validIssueId);
         });
 
-        it("succeeds validation when req.params.issueId is provided", async () => {
+        it("succeeds validation when req.params.issueId is provided", async () =>
+        {
             prisma.issues.findUnique = mock(() => Promise.resolve({
                 id: validIssueId,
                 title: "Card 1",
@@ -228,16 +246,19 @@ describe("Empirical Challenger Verification Suite", () => {
     // -------------------------------------------------------------
     // Finding API-04 Verification: updateRoleHandler Bugs
     // -------------------------------------------------------------
-    describe("API-04: updateRoleHandler self-update deadlock and role truncation", () => {
+    describe("API-04: updateRoleHandler self-update deadlock and role truncation", () =>
+    {
         const origOrgFindUnique = prisma.orgs.findUnique;
         const origMembershipUpdate = prisma.membership.update;
 
-        afterEach(() => {
+        afterEach(() =>
+        {
             prisma.orgs.findUnique = origOrgFindUnique;
             prisma.membership.update = origMembershipUpdate;
         });
 
-        it("admin updating their own role succeeds without deadlock when multiple admins exist", async () => {
+        it("admin updating their own role succeeds without deadlock when multiple admins exist", async () =>
+        {
             prisma.orgs.findUnique = mock(() => Promise.resolve({
                 id: validOrgId,
                 _count: { members: 2 },
@@ -256,7 +277,8 @@ describe("Empirical Challenger Verification Suite", () => {
             })) as any;
 
             let updatedUserId: any = null;
-            prisma.membership.update = mock((args: any) => {
+            prisma.membership.update = mock((args: any) =>
+            {
                 updatedUserId = args.where.userId_orgId.userId;
                 return Promise.resolve({ role: "employee" });
             }) as any;
@@ -274,7 +296,8 @@ describe("Empirical Challenger Verification Suite", () => {
             expect(updatedUserId).toBe(adminUserId);
         });
 
-        it("prevents demoting the last remaining admin", async () => {
+        it("prevents demoting the last remaining admin", async () =>
+        {
             prisma.orgs.findUnique = mock(() => Promise.resolve({
                 id: validOrgId,
                 _count: { members: 1 },
@@ -297,7 +320,8 @@ describe("Empirical Challenger Verification Suite", () => {
             await expect(updateRoleHandler(req, res)).rejects.toThrow("Cannot demote the last remaining admin");
         });
 
-        it("supports role enum 'contributor'", async () => {
+        it("supports role enum 'contributor'", async () =>
+        {
             prisma.orgs.findUnique = mock(() => Promise.resolve({
                 id: validOrgId,
                 _count: { members: 2 },
@@ -332,18 +356,22 @@ describe("Empirical Challenger Verification Suite", () => {
     // -------------------------------------------------------------
     // Finding API-05 Verification: Enforcing accepted: true in UpdateOrg
     // -------------------------------------------------------------
-    describe("API-05: UpdateOrgHandler unaccepted invitee authorization", () => {
+    describe("API-05: UpdateOrgHandler unaccepted invitee authorization", () =>
+    {
         const origOrgFindUnique = prisma.orgs.findUnique;
         const origOrgUpdate = prisma.orgs.update;
 
-        afterEach(() => {
+        afterEach(() =>
+        {
             prisma.orgs.findUnique = origOrgFindUnique;
             prisma.orgs.update = origOrgUpdate;
         });
 
-        it("verifies query filter enforces accepted: true and rejects unaccepted invitee", async () => {
+        it("verifies query filter enforces accepted: true and rejects unaccepted invitee", async () =>
+        {
             let capturedQuery: any = null;
-            prisma.orgs.findUnique = mock((args: any) => {
+            prisma.orgs.findUnique = mock((args: any) =>
+            {
                 capturedQuery = args;
                 // If query checks accepted: true, it will find 0 members for an unaccepted invitee
                 return Promise.resolve({
@@ -368,14 +396,16 @@ describe("Empirical Challenger Verification Suite", () => {
     // -------------------------------------------------------------
     // Finding API-06 Verification: Additional API Defects
     // -------------------------------------------------------------
-    describe("API-06: Additional API defects empirical check", () => {
+    describe("API-06: Additional API defects empirical check", () =>
+    {
         const origUserFindUnique = prisma.user.findUnique;
         const origOrgFindUnique = prisma.orgs.findUnique;
         const origMembershipCreate = prisma.membership.create;
         const origCommentFindUnique = prisma.comments.findUnique;
         const origCommentTransaction = prisma.$transaction;
 
-        afterEach(() => {
+        afterEach(() =>
+        {
             prisma.user.findUnique = origUserFindUnique;
             prisma.orgs.findUnique = origOrgFindUnique;
             prisma.membership.create = origMembershipCreate;
@@ -383,7 +413,8 @@ describe("Empirical Challenger Verification Suite", () => {
             prisma.$transaction = origCommentTransaction;
         });
 
-        it("addUser: admin inviting own email throws Duplicate without 500 duplicate key error", async () => {
+        it("addUser: admin inviting own email throws Duplicate without 500 duplicate key error", async () =>
+        {
             prisma.user.findUnique = mock(() => Promise.resolve({
                 id: adminUserId,
                 email: "admin@example.com"
@@ -404,7 +435,8 @@ describe("Empirical Challenger Verification Suite", () => {
             await expect(inviteUserHandler(req, res)).rejects.toThrow("User already member");
         });
 
-        it("deleteComment: admin CAN delete comment older than 24 hours (bypass moderation lockout)", async () => {
+        it("deleteComment: admin CAN delete comment older than 24 hours (bypass moderation lockout)", async () =>
+        {
             const fortyEightHoursAgo = new Date(Date.now() - 48 * 60 * 60 * 1000);
             prisma.comments.findUnique = mock(() => Promise.resolve({
                 id: validCommentId,
@@ -422,7 +454,8 @@ describe("Empirical Challenger Verification Suite", () => {
                 }
             })) as any;
 
-            prisma.$transaction = mock(async (fn: any) => {
+            prisma.$transaction = mock(async (fn: any) =>
+            {
                 return fn({
                     comments: {
                         updateMany: mock(() => Promise.resolve({ count: 0 })),
@@ -451,7 +484,8 @@ describe("Empirical Challenger Verification Suite", () => {
     // -------------------------------------------------------------
     // Finding WS-01 Verification: WebSocket Broadcast Triggers
     // -------------------------------------------------------------
-    describe("WS-01: Mutations trigger WebSocket Broadcasts", () => {
+    describe("WS-01: Mutations trigger WebSocket Broadcasts", () =>
+    {
         const origBoardFindUnique = prisma.boards.findUnique;
         const origBoardUpdate = prisma.boards.update;
         const origBoardDelete = prisma.boards.delete;
@@ -460,7 +494,8 @@ describe("Empirical Challenger Verification Suite", () => {
         const origCommentCreate = prisma.comments.create;
         const origBroadcast = wsBroadcaster.broadcast;
 
-        afterEach(() => {
+        afterEach(() =>
+        {
             prisma.boards.findUnique = origBoardFindUnique;
             prisma.boards.update = origBoardUpdate;
             prisma.boards.delete = origBoardDelete;
@@ -470,10 +505,12 @@ describe("Empirical Challenger Verification Suite", () => {
             wsBroadcaster.broadcast = origBroadcast;
         });
 
-        it("renameBoard executes DB mutation and triggers board:updated broadcast", async () => {
+        it("renameBoard executes DB mutation and triggers board:updated broadcast", async () =>
+        {
             let broadcastCalled = false;
             let capturedEvent: any = null;
-            wsBroadcaster.broadcast = mock((boardId: string, event: any) => {
+            wsBroadcaster.broadcast = mock((boardId: string, event: any) =>
+            {
                 broadcastCalled = true;
                 capturedEvent = event;
                 return Promise.resolve(true);
@@ -505,7 +542,7 @@ describe("Empirical Challenger Verification Suite", () => {
             };
             const res = createMockRes();
 
-            await renameBoard(req, res);
+            await updateBoard(req, res);
 
             expect(res.statusCode).toBe(200);
             expect(broadcastCalled).toBe(true);
@@ -513,10 +550,12 @@ describe("Empirical Challenger Verification Suite", () => {
             expect(capturedEvent.payload.title).toBe("New Title");
         });
 
-        it("deleteBoard executes DB delete and triggers board:deleted broadcast", async () => {
+        it("deleteBoard executes DB delete and triggers board:deleted broadcast", async () =>
+        {
             let broadcastCalled = false;
             let capturedEvent: any = null;
-            wsBroadcaster.broadcast = mock((boardId: string, event: any) => {
+            wsBroadcaster.broadcast = mock((boardId: string, event: any) =>
+            {
                 broadcastCalled = true;
                 capturedEvent = event;
                 return Promise.resolve(true);
@@ -550,10 +589,12 @@ describe("Empirical Challenger Verification Suite", () => {
             expect(capturedEvent.payload.boardId).toBe(validBoardId);
         });
 
-        it("addComment creates comment in DB and triggers comment:created broadcast", async () => {
+        it("addComment creates comment in DB and triggers comment:created broadcast", async () =>
+        {
             let broadcastCalled = false;
             let capturedEvent: any = null;
-            wsBroadcaster.broadcast = mock((boardId: string, event: any) => {
+            wsBroadcaster.broadcast = mock((boardId: string, event: any) =>
+            {
                 broadcastCalled = true;
                 capturedEvent = event;
                 return Promise.resolve(true);

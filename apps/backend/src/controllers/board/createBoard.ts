@@ -35,7 +35,7 @@ export async function createBoard(req: Request, res: Response)
         }
     })
 
-    
+
     if (!user) throw new Not_Found("Org not found/invalid Org Id");
     if (user.members.length == 0) throw new Forbidden("Employee/Admin access only");
 

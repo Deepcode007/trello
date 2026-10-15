@@ -68,10 +68,12 @@ export async function renameSection(req: Request, res: Response)
         data: updateData
     });
 
-    if (pos !== undefined) {
+    if (pos !== undefined)
+    {
         wsBroadcaster.broadcastListReordered(section.boardId, section.id, pos);
     }
-    if (result2.data.title !== undefined || result2.data.wipLimit !== undefined || result2.data.isArchived !== undefined) {
+    if (result2.data.title !== undefined || result2.data.wipLimit !== undefined || result2.data.isArchived !== undefined)
+    {
         wsBroadcaster.broadcast(section.boardId, {
             type: "list:updated",
             payload: { listId: section.id, title: section.title, wipLimit: section.wipLimit, isArchived: section.isArchived }

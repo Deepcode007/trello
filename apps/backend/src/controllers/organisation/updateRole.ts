@@ -53,12 +53,14 @@ export async function updateRoleHandler(req: Request, res: Response)
     const targetMember = org.members.find(m => m.user.email === result2.data.email);
     if (!targetMember) throw new Not_Found("User not a member");
 
-    if (targetMember.role === result2.data.role) {
+    if (targetMember.role === result2.data.role)
+    {
         throw new Duplicate(`User already ${targetMember.role}`);
     }
 
     // Guard against demoting the last active administrator
-    if (targetMember.role === "admin" && result2.data.role !== "admin" && org._count.members <= 1) {
+    if (targetMember.role === "admin" && result2.data.role !== "admin" && org._count.members <= 1)
+    {
         throw new Forbidden("Cannot demote the last remaining admin");
     }
 

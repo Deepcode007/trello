@@ -11,7 +11,7 @@ export async function createSection(req: Request, res: Response)
     }).safeParse(req.params);
 
     const result2 = zod.object({
-        title: zod.string().trim(),
+        title: zod.string().trim().min(1),
         position: zod.number().optional()
     }).safeParse(req.body);
 
@@ -40,12 +40,13 @@ export async function createSection(req: Request, res: Response)
             }
         }
     })
-    
+
     if (!user) throw new Not_Found("Invalid Boardid/Board Not found");
     if (user.org.members.length === 0) throw new Forbidden("Admin/Employee access required");
-    
+
     let position = result2.data.position;
-    if (position === undefined) {
+    if (position === undefined)
+    {
         const count = await prisma.sections.count({
             where: { boardId: result.data.boardId }
         });
