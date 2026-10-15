@@ -22,12 +22,10 @@ export async function deleteUserHandler(req: Request, res: Response)
         },
         select: {
             members: {
-                where: {
-                    accepted: true
-                },
                 select: {
                     userId: true,
                     role: true,
+                    accepted: true,
                     user: {
                         select: {
                             email: true
@@ -50,18 +48,28 @@ export async function deleteUserHandler(req: Request, res: Response)
 
     if (!org) throw new Not_Found("Org not found");
 
-    let admin = org.members.find(x => (x.userId == req.id && x.role == "admin"));
+    let admin = org.members.find(x => (x.userId == req.id && x.role == "admin" && x.accepted !== false));
     let user_found = org.members.find(x => x.user.email === result2.data.email);
 
     if (!user_found) throw new Not_Found("User not a member");
-    if (user_found.userId == req.id) admin = user_found;
 
-    if (!admin) throw new Forbidden("Admin access required");
+    const isPending = user_found.accepted === false;
 
-    // self leaving admin or removing an admin (allow if more admins exist)
-    if (user_found.role == "admin" && org._count.members <= 1)
+    if (isPending)
     {
-        throw new Forbidden("No more admins left");
+        if (!admin) throw new Forbidden("Admin access required");
+    }
+    else
+    {
+        if (user_found.userId == req.id) admin = user_found;
+
+        if (!admin) throw new Forbidden("Admin access required");
+
+        // self leaving admin or removing an admin (allow if more admins exist)
+        if (user_found.role == "admin" && org._count.members <= 1)
+        {
+            throw new Forbidden("No more admins left");
+        }
     }
 
     await prisma.membership.delete({

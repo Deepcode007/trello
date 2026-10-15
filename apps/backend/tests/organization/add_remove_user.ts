@@ -221,10 +221,7 @@ export function add_remove_users_and_roles()
 
         it("fails if user not member", async () =>
         {
-            const { email, password } = await create_user();
-            const tkn = await login_user(email, password);
-            // contributor
-            await invite_user(orgId, email, token);
+            const { email } = await create_user();
 
             const res = await fetch(`${globalThis.TEST_BASE_URL}/api/orgs/${orgId}/members`, {
                 method: "DELETE",
@@ -233,6 +230,39 @@ export function add_remove_users_and_roles()
             });
 
             expect(res.status).toBe(404);
+        })
+
+        it("admin can revoke pending invitation", async () =>
+        {
+            const { email } = await create_user();
+            await invite_user(orgId, email, token);
+
+            const res = await fetch(`${globalThis.TEST_BASE_URL}/api/orgs/${orgId}/members`, {
+                method: "DELETE",
+                headers: { "Content-Type": "application/json", authorization: `Bearer ${token}` },
+                body: JSON.stringify({ email })
+            });
+
+            expect(res.status).toBe(200);
+        })
+
+        it("fails if non-admin tries to revoke pending invitation", async () =>
+        {
+            const { email: pendingEmail } = await create_user();
+            await invite_user(orgId, pendingEmail, token);
+
+            const { email: nonAdminEmail, password: nonAdminPassword } = await create_user();
+            const nonAdminToken = await login_user(nonAdminEmail, nonAdminPassword);
+            await invite_user(orgId, nonAdminEmail, token);
+            await accept_invite(nonAdminToken, orgId);
+
+            const res = await fetch(`${globalThis.TEST_BASE_URL}/api/orgs/${orgId}/members`, {
+                method: "DELETE",
+                headers: { "Content-Type": "application/json", authorization: `Bearer ${nonAdminToken}` },
+                body: JSON.stringify({ email: pendingEmail })
+            });
+
+            expect(res.status).toBe(403);
         })
 
         it("deletes user", async () =>
