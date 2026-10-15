@@ -33,7 +33,8 @@ export async function createSection(req: Request, res: Response)
                             role: {
                                 in: ["admin", "employee"]
                             },
-                            userId: req.id
+                            userId: req.id,
+                            accepted: true
                         }
                     }
                 }
@@ -47,10 +48,12 @@ export async function createSection(req: Request, res: Response)
     let position = result2.data.position;
     if (position === undefined)
     {
-        const count = await prisma.sections.count({
-            where: { boardId: result.data.boardId }
+        const lastSection = await prisma.sections.findFirst({
+            where: { boardId: result.data.boardId },
+            orderBy: { position: "desc" },
+            select: { position: true }
         });
-        position = (count + 1) * 1000;
+        position = (lastSection?.position ?? 0) + 1000;
     }
 
     const section = await prisma.sections.create({

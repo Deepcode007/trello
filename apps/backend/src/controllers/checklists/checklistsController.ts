@@ -44,15 +44,17 @@ export async function createChecklist(req: Request, res: Response)
     if (!issue) throw new Not_Found("Card not found");
     if (issue.board.org.members.length === 0) throw new Forbidden("Admin/Employee access required");
 
-    const count = await prisma.checklists.count({
-        where: { issueId: paramResult.data.issueId }
+    const lastChecklist = await prisma.checklists.findFirst({
+        where: { issueId: paramResult.data.issueId },
+        orderBy: { position: "desc" },
+        select: { position: true }
     });
 
     const checklist = await prisma.checklists.create({
         data: {
             issueId: paramResult.data.issueId,
             title: bodyResult.data.title,
-            position: (count + 1) * 1000
+            position: (lastChecklist?.position ?? 0) + 1000
         },
         include: {
             items: true
@@ -117,8 +119,10 @@ export async function addChecklistItem(req: Request, res: Response)
     if (!checklist) throw new Not_Found("Checklist not found");
     if (checklist.issue.board.org.members.length === 0) throw new Forbidden("Admin/Employee access required");
 
-    const count = await prisma.checklist_items.count({
-        where: { checklistId: paramResult.data.checklistId }
+    const lastItem = await prisma.checklist_items.findFirst({
+        where: { checklistId: paramResult.data.checklistId },
+        orderBy: { position: "desc" },
+        select: { position: true }
     });
 
     const item = await prisma.checklist_items.create({
@@ -126,7 +130,7 @@ export async function addChecklistItem(req: Request, res: Response)
             checklistId: paramResult.data.checklistId,
             content: bodyResult.data.content,
             dueDate: bodyResult.data.dueDate,
-            position: (count + 1) * 1000
+            position: (lastItem?.position ?? 0) + 1000
         }
     });
 

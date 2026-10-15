@@ -62,10 +62,12 @@ export async function createIssue(req: Request, res: Response)
     let position = result2.data.position;
     if (position === undefined)
     {
-        const count = await prisma.issues.count({
-            where: { sectionId: result.data.sectionId }
+        const lastIssue = await prisma.issues.findFirst({
+            where: { sectionId: result.data.sectionId },
+            orderBy: { position: "desc" },
+            select: { position: true }
         });
-        position = (count + 1) * 1000;
+        position = (lastIssue?.position ?? 0) + 1000;
     }
 
     const issue = await prisma.issues.create({

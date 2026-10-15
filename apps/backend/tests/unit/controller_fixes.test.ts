@@ -1,6 +1,7 @@
 import { describe, expect, it, mock, beforeEach, afterEach } from "bun:test";
 import { prisma } from "db/prisma";
 import { createIssue } from "../../src/controllers/issues/createIssue";
+import { createSection } from "../../src/controllers/sections/createSection";
 import { updateIssue } from "../../src/controllers/issues/updateIssue";
 import { OrgMembersHandler } from "../../src/controllers/organisation/allMembers";
 import { deleteUserHandler } from "../../src/controllers/organisation/removeUser";
@@ -9,9 +10,12 @@ import { renameSection } from "../../src/controllers/sections/renameSection";
 import { getAllSections } from "../../src/controllers/sections/getAllSections";
 import { getAllIssues } from "../../src/controllers/issues/getAllIssues";
 import { issueDetail } from "../../src/controllers/issues/issueDetail";
+import { assignIssue } from "../../src/controllers/issues/assignIssue";
 import { getBoardDetails } from "../../src/controllers/board/getaBoard";
+import { loginHandler } from "../../src/controllers/loginHandler";
 import { wsBroadcaster } from "../../src/services/broadcaster";
 import { WebSocketBroadcaster as WsBroadcaster } from "../../../websockets/src/services/broadcaster";
+import bcrypt from "bcrypt";
 
 describe("Controller fixes unit tests", () =>
 {
@@ -44,6 +48,7 @@ describe("Controller fixes unit tests", () =>
         const origSectionFindUnique = prisma.sections.findUnique;
         const origIssueCreate = prisma.issues.create;
         const origIssueCount = prisma.issues.count;
+        const origIssueFindFirst = prisma.issues.findFirst;
 
         afterEach(() =>
         {
@@ -51,11 +56,13 @@ describe("Controller fixes unit tests", () =>
             prisma.sections.findUnique = origSectionFindUnique;
             prisma.issues.create = origIssueCreate;
             prisma.issues.count = origIssueCount;
+            prisma.issues.findFirst = origIssueFindFirst;
         });
 
         beforeEach(() =>
         {
             prisma.issues.count = mock(() => Promise.resolve(0)) as any;
+            prisma.issues.findFirst = mock(() => Promise.resolve(null)) as any;
         });
 
         it("throws ValidationError when section belongs to a different board", async () =>
@@ -134,7 +141,7 @@ describe("Controller fixes unit tests", () =>
             expect(res.body.data.title).toBe("Test Issue");
         });
 
-        it("calculates default position based on existing issue count when not provided", async () =>
+        it("calculates default position as 1000 when no existing issues in section", async () =>
         {
             prisma.boards.findUnique = mock(() => Promise.resolve({
                 id: validBoardId,
@@ -148,7 +155,7 @@ describe("Controller fixes unit tests", () =>
                 boardId: validBoardId
             })) as any;
 
-            prisma.issues.count = mock(() => Promise.resolve(2)) as any;
+            prisma.issues.findFirst = mock(() => Promise.resolve(null)) as any;
 
             let createdData: any;
             prisma.issues.create = mock((args: any) =>
@@ -169,7 +176,52 @@ describe("Controller fixes unit tests", () =>
 
             await createIssue(req, res);
             expect(res.statusCode).toBe(201);
-            expect(createdData.position).toBe(3000); // (2 + 1) * 1000
+            expect(createdData.position).toBe(1000); // 0 + 1000
+        });
+
+        it("calculates default position based on highest existing issue position rather than count to prevent collisions", async () =>
+        {
+            prisma.boards.findUnique = mock(() => Promise.resolve({
+                id: validBoardId,
+                org: {
+                    members: [{ userId, accepted: true }]
+                }
+            })) as any;
+
+            prisma.sections.findUnique = mock(() => Promise.resolve({
+                id: validSectionId,
+                boardId: validBoardId
+            })) as any;
+
+            // Scenario: 3 issues previously existed (1000, 2000, 3000), issue 2 was deleted.
+            // Remaining count is 2, but highest position is 3000.
+            prisma.issues.findFirst = mock((args: any) =>
+            {
+                expect(args.where).toEqual({ sectionId: validSectionId });
+                expect(args.orderBy).toEqual({ position: "desc" });
+                return Promise.resolve({ position: 3000 });
+            }) as any;
+
+            let createdData: any;
+            prisma.issues.create = mock((args: any) =>
+            {
+                createdData = args.data;
+                return Promise.resolve({
+                    id: "issue-1",
+                    ...args.data
+                });
+            }) as any;
+
+            const req: any = {
+                id: userId,
+                params: { sectionId: validSectionId },
+                body: { title: "Test Issue", boardId: validBoardId }
+            };
+            const res = createMockRes();
+
+            await createIssue(req, res);
+            expect(res.statusCode).toBe(201);
+            expect(createdData.position).toBe(4000); // 3000 + 1000, avoiding collision with existing issue at 3000
         });
 
         it("preserves explicit position when provided", async () =>
@@ -206,6 +258,127 @@ describe("Controller fixes unit tests", () =>
             await createIssue(req, res);
             expect(res.statusCode).toBe(201);
             expect(createdData.position).toBe(1500);
+        });
+    });
+
+    describe("createSection position handling and collision prevention", () =>
+    {
+        const origBoardFindUnique = prisma.boards.findUnique;
+        const origSectionFindFirst = prisma.sections.findFirst;
+        const origSectionCreate = prisma.sections.create;
+
+        afterEach(() =>
+        {
+            prisma.boards.findUnique = origBoardFindUnique;
+            prisma.sections.findFirst = origSectionFindFirst;
+            prisma.sections.create = origSectionCreate;
+        });
+
+        it("calculates default position as 1000 when no sections exist", async () =>
+        {
+            prisma.boards.findUnique = mock(() => Promise.resolve({
+                id: validBoardId,
+                title: "Board 1",
+                org: {
+                    members: [{ userId, accepted: true, role: "admin" }]
+                }
+            })) as any;
+
+            prisma.sections.findFirst = mock(() => Promise.resolve(null)) as any;
+
+            let createdData: any;
+            prisma.sections.create = mock((args: any) =>
+            {
+                createdData = args.data;
+                return Promise.resolve({
+                    id: "sec-1",
+                    ...args.data
+                });
+            }) as any;
+
+            const req: any = {
+                id: userId,
+                params: { boardId: validBoardId },
+                body: { title: "To Do" }
+            };
+            const res = createMockRes();
+
+            await createSection(req, res);
+            expect(res.statusCode).toBe(201);
+            expect(createdData.position).toBe(1000);
+        });
+
+        it("calculates default position based on highest existing section position (3000 + 1000 = 4000) preventing collision", async () =>
+        {
+            prisma.boards.findUnique = mock(() => Promise.resolve({
+                id: validBoardId,
+                title: "Board 1",
+                org: {
+                    members: [{ userId, accepted: true, role: "admin" }]
+                }
+            })) as any;
+
+            // Scenario: sections existed at 1000, 2000, 3000. Section 2 was deleted.
+            // Remaining count is 2, but highest position is 3000.
+            prisma.sections.findFirst = mock((args: any) =>
+            {
+                expect(args.where).toEqual({ boardId: validBoardId });
+                expect(args.orderBy).toEqual({ position: "desc" });
+                return Promise.resolve({ position: 3000 });
+            }) as any;
+
+            let createdData: any;
+            prisma.sections.create = mock((args: any) =>
+            {
+                createdData = args.data;
+                return Promise.resolve({
+                    id: "sec-4",
+                    ...args.data
+                });
+            }) as any;
+
+            const req: any = {
+                id: userId,
+                params: { boardId: validBoardId },
+                body: { title: "Done" }
+            };
+            const res = createMockRes();
+
+            await createSection(req, res);
+            expect(res.statusCode).toBe(201);
+            expect(createdData.position).toBe(4000); // 3000 + 1000, avoiding collision at 3000
+        });
+
+        it("preserves explicit position when provided", async () =>
+        {
+            prisma.boards.findUnique = mock(() => Promise.resolve({
+                id: validBoardId,
+                title: "Board 1",
+                org: {
+                    members: [{ userId, accepted: true, role: "admin" }]
+                }
+            })) as any;
+
+            let createdData: any;
+            prisma.sections.create = mock((args: any) =>
+            {
+                createdData = args.data;
+                return Promise.resolve({
+                    id: "sec-custom",
+                    ...args.data
+                });
+            }) as any;
+
+            const req: any = {
+                id: userId,
+                params: { boardId: validBoardId },
+                body: { title: "Custom Position", position: 2500 }
+            };
+            const res = createMockRes();
+
+            await createSection(req, res);
+            expect(res.statusCode).toBe(201);
+            expect(createdData.position).toBe(2500);
         });
     });
 
@@ -876,6 +1049,221 @@ describe("Controller fixes unit tests", () =>
             wsBroadcaster.evictUser = origEvictUser;
             wsBroadcaster.broadcast = origBroadcast;
         });
+
+        describe("Revoking Pending Invitations in deleteUserHandler", () =>
+        {
+            const pendingUserEmail = "pending@example.com";
+            const pendingUserId = "pending-uid-1";
+
+            it("queries both accepted and pending members without where.accepted filter on members", async () =>
+            {
+                const origOrgFind = prisma.orgs.findUnique;
+                const origMemberDelete = prisma.membership.delete;
+                const origBoardsFind = prisma.boards.findMany;
+                const origBroadcast = wsBroadcaster.broadcast;
+
+                let findArgs: any = null;
+                prisma.orgs.findUnique = mock((args: any) =>
+                {
+                    findArgs = args;
+                    return Promise.resolve({
+                        id: validOrgId,
+                        members: [
+                            { userId: userId, role: "admin", accepted: true, user: { email: "admin@example.com" } },
+                            { userId: pendingUserId, role: "contributor", accepted: false, user: { email: pendingUserEmail } }
+                        ],
+                        _count: { members: 1 }
+                    });
+                }) as any;
+
+                prisma.membership.delete = mock(() => Promise.resolve({})) as any;
+                prisma.boards.findMany = mock(() => Promise.resolve([])) as any;
+                wsBroadcaster.broadcast = mock(() => Promise.resolve(true)) as any;
+
+                const req: any = {
+                    id: userId,
+                    params: { orgId: validOrgId },
+                    body: { email: pendingUserEmail }
+                };
+                const res = createMockRes();
+
+                await deleteUserHandler(req, res);
+
+                expect(res.statusCode).toBe(200);
+                expect(findArgs.select.members.where).toBeUndefined();
+                expect(findArgs.select.members.select.accepted).toBe(true);
+
+                prisma.orgs.findUnique = origOrgFind;
+                prisma.membership.delete = origMemberDelete;
+                prisma.boards.findMany = origBoardsFind;
+                wsBroadcaster.broadcast = origBroadcast;
+            });
+
+            it("allows admin to revoke pending invitation (accepted: false)", async () =>
+            {
+                const origOrgFind = prisma.orgs.findUnique;
+                const origMemberDelete = prisma.membership.delete;
+                const origBoardsFind = prisma.boards.findMany;
+                const origBroadcast = wsBroadcaster.broadcast;
+
+                let deletedMembershipWhere: any = null;
+                prisma.orgs.findUnique = mock(() => Promise.resolve({
+                    id: validOrgId,
+                    members: [
+                        { userId: userId, role: "admin", accepted: true, user: { email: "admin@example.com" } },
+                        { userId: pendingUserId, role: "contributor", accepted: false, user: { email: pendingUserEmail } }
+                    ],
+                    _count: { members: 1 }
+                })) as any;
+
+                prisma.membership.delete = mock((args: any) =>
+                {
+                    deletedMembershipWhere = args.where;
+                    return Promise.resolve({});
+                }) as any;
+                prisma.boards.findMany = mock(() => Promise.resolve([])) as any;
+                wsBroadcaster.broadcast = mock(() => Promise.resolve(true)) as any;
+
+                const req: any = {
+                    id: userId,
+                    params: { orgId: validOrgId },
+                    body: { email: pendingUserEmail }
+                };
+                const res = createMockRes();
+
+                await deleteUserHandler(req, res);
+
+                expect(res.statusCode).toBe(200);
+                expect(res.body.success).toBe(true);
+                expect(res.body.data).toBe("user deleted");
+                expect(deletedMembershipWhere).toEqual({
+                    userId_orgId: {
+                        userId: pendingUserId,
+                        orgId: validOrgId
+                    }
+                });
+
+                prisma.orgs.findUnique = origOrgFind;
+                prisma.membership.delete = origMemberDelete;
+                prisma.boards.findMany = origBoardsFind;
+                wsBroadcaster.broadcast = origBroadcast;
+            });
+
+            it("prevents non-admin member from deleting a pending invitation", async () =>
+            {
+                const origOrgFind = prisma.orgs.findUnique;
+                const nonAdminUserId = "non-admin-user";
+
+                prisma.orgs.findUnique = mock(() => Promise.resolve({
+                    id: validOrgId,
+                    members: [
+                        { userId: nonAdminUserId, role: "employee", accepted: true, user: { email: "employee@example.com" } },
+                        { userId: pendingUserId, role: "contributor", accepted: false, user: { email: pendingUserEmail } }
+                    ],
+                    _count: { members: 1 }
+                })) as any;
+
+                const req: any = {
+                    id: nonAdminUserId,
+                    params: { orgId: validOrgId },
+                    body: { email: pendingUserEmail }
+                };
+                const res = createMockRes();
+
+                expect(deleteUserHandler(req, res)).rejects.toThrow("Admin access required");
+
+                prisma.orgs.findUnique = origOrgFind;
+            });
+
+            it("prevents the invited user from deleting their own pending invitation via removeUser", async () =>
+            {
+                const origOrgFind = prisma.orgs.findUnique;
+
+                prisma.orgs.findUnique = mock(() => Promise.resolve({
+                    id: validOrgId,
+                    members: [
+                        { userId: "some-admin-id", role: "admin", accepted: true, user: { email: "admin@example.com" } },
+                        { userId: pendingUserId, role: "contributor", accepted: false, user: { email: pendingUserEmail } }
+                    ],
+                    _count: { members: 1 }
+                })) as any;
+
+                const req: any = {
+                    id: pendingUserId,
+                    params: { orgId: validOrgId },
+                    body: { email: pendingUserEmail }
+                };
+                const res = createMockRes();
+
+                expect(deleteUserHandler(req, res)).rejects.toThrow("Admin access required");
+
+                prisma.orgs.findUnique = origOrgFind;
+            });
+
+            it("throws Not_Found when email is not found among org members", async () =>
+            {
+                const origOrgFind = prisma.orgs.findUnique;
+
+                prisma.orgs.findUnique = mock(() => Promise.resolve({
+                    id: validOrgId,
+                    members: [
+                        { userId: userId, role: "admin", accepted: true, user: { email: "admin@example.com" } }
+                    ],
+                    _count: { members: 1 }
+                })) as any;
+
+                const req: any = {
+                    id: userId,
+                    params: { orgId: validOrgId },
+                    body: { email: "notfound@example.com" }
+                };
+                const res = createMockRes();
+
+                expect(deleteUserHandler(req, res)).rejects.toThrow("User not a member");
+
+                prisma.orgs.findUnique = origOrgFind;
+            });
+
+            it("does not trigger admin lockout when revoking a pending invitation with role admin", async () =>
+            {
+                const origOrgFind = prisma.orgs.findUnique;
+                const origMemberDelete = prisma.membership.delete;
+                const origBoardsFind = prisma.boards.findMany;
+                const origBroadcast = wsBroadcaster.broadcast;
+
+                const pendingAdminEmail = "pendingadmin@example.com";
+                const pendingAdminId = "pending-admin-id";
+
+                prisma.orgs.findUnique = mock(() => Promise.resolve({
+                    id: validOrgId,
+                    members: [
+                        { userId: userId, role: "admin", accepted: true, user: { email: "admin@example.com" } },
+                        { userId: pendingAdminId, role: "admin", accepted: false, user: { email: pendingAdminEmail } }
+                    ],
+                    _count: { members: 1 }
+                })) as any;
+
+                prisma.membership.delete = mock(() => Promise.resolve({})) as any;
+                prisma.boards.findMany = mock(() => Promise.resolve([])) as any;
+                wsBroadcaster.broadcast = mock(() => Promise.resolve(true)) as any;
+
+                const req: any = {
+                    id: userId,
+                    params: { orgId: validOrgId },
+                    body: { email: pendingAdminEmail }
+                };
+                const res = createMockRes();
+
+                await deleteUserHandler(req, res);
+
+                expect(res.statusCode).toBe(200);
+
+                prisma.orgs.findUnique = origOrgFind;
+                prisma.membership.delete = origMemberDelete;
+                prisma.boards.findMany = origBoardsFind;
+                wsBroadcaster.broadcast = origBroadcast;
+            });
+        });
     });
 
     describe("Deterministic Query Ordering with Compound Sort Criteria", () =>
@@ -1047,4 +1435,322 @@ describe("Controller fixes unit tests", () =>
             prisma.issues.findUnique = origIssueFind;
         });
     });
+
+    describe("assignIssue duplicate email handling and broadcast scoping", () =>
+    {
+        const validIssueId = "77777777-7777-4777-8777-777777777777";
+        const origIssueFindUnique = prisma.issues.findUnique;
+        const origMembershipFindMany = prisma.membership.findMany;
+        const origIssueMappingCreateMany = prisma.issue_mapping.createMany;
+        const origBroadcast = wsBroadcaster.broadcast;
+
+        afterEach(() =>
+        {
+            prisma.issues.findUnique = origIssueFindUnique;
+            prisma.membership.findMany = origMembershipFindMany;
+            prisma.issue_mapping.createMany = origIssueMappingCreateMany;
+            wsBroadcaster.broadcast = origBroadcast;
+        });
+
+        it("handles duplicate emails without throwing ValidationError and creates single assignment", async () =>
+        {
+            let membershipWhere: any = null;
+            let createManyData: any = null;
+            let broadcastPayload: any = null;
+
+            prisma.issues.findUnique = mock(() => Promise.resolve({
+                board: {
+                    id: validBoardId,
+                    org: {
+                        id: validOrgId,
+                        members: [{ userId, role: "admin", accepted: true }]
+                    }
+                }
+            })) as any;
+
+            prisma.membership.findMany = mock((args: any) =>
+            {
+                membershipWhere = args.where;
+                return Promise.resolve([
+                    {
+                        userId: "user-dup-1",
+                        user: {
+                            email: "dev@example.com",
+                            issueMappings: []
+                        }
+                    }
+                ]);
+            }) as any;
+
+            prisma.issue_mapping.createMany = mock((args: any) =>
+            {
+                createManyData = args.data;
+                return Promise.resolve({ count: args.data.length });
+            }) as any;
+
+            wsBroadcaster.broadcast = mock((boardId: string, event: any) =>
+            {
+                broadcastPayload = event;
+                return Promise.resolve(true);
+            }) as any;
+
+            const req: any = {
+                id: userId,
+                params: { issueId: validIssueId },
+                body: { email: ["dev@example.com", "dev@example.com"] }
+            };
+            const res = createMockRes();
+
+            await assignIssue(req, res);
+
+            expect(res.statusCode).toBe(200);
+            expect(res.body.success).toBe(true);
+            expect(res.body.data).toBe("assigned 1");
+            expect(membershipWhere.user.email.in).toEqual(["dev@example.com"]);
+            expect(createManyData).toEqual([{ userId: "user-dup-1", issueId: validIssueId }]);
+            expect(broadcastPayload.type).toBe("card:member_assigned");
+            expect(broadcastPayload.payload.assignedUsers).toEqual([
+                { userId: "user-dup-1", email: "dev@example.com" }
+            ]);
+        });
+
+        it("broadcasts only newly assigned users (entriesToCreate) and excludes users who were already assigned", async () =>
+        {
+            let createManyData: any = null;
+            let broadcastPayload: any = null;
+
+            prisma.issues.findUnique = mock(() => Promise.resolve({
+                board: {
+                    id: validBoardId,
+                    org: {
+                        id: validOrgId,
+                        members: [{ userId, role: "admin", accepted: true }]
+                    }
+                }
+            })) as any;
+
+            prisma.membership.findMany = mock(() => Promise.resolve([
+                {
+                    userId: "user-already-assigned",
+                    user: {
+                        email: "already@example.com",
+                        issueMappings: [{ userId: "user-already-assigned" }]
+                    }
+                },
+                {
+                    userId: "user-newly-assigned",
+                    user: {
+                        email: "new@example.com",
+                        issueMappings: []
+                    }
+                }
+            ])) as any;
+
+            prisma.issue_mapping.createMany = mock((args: any) =>
+            {
+                createManyData = args.data;
+                return Promise.resolve({ count: args.data.length });
+            }) as any;
+
+            wsBroadcaster.broadcast = mock((boardId: string, event: any) =>
+            {
+                broadcastPayload = event;
+                return Promise.resolve(true);
+            }) as any;
+
+            const req: any = {
+                id: userId,
+                params: { issueId: validIssueId },
+                body: { email: ["already@example.com", "new@example.com"] }
+            };
+            const res = createMockRes();
+
+            await assignIssue(req, res);
+
+            expect(res.statusCode).toBe(200);
+            expect(res.body.success).toBe(true);
+            expect(res.body.data).toBe("assigned 1");
+            expect(createManyData).toEqual([{ userId: "user-newly-assigned", issueId: validIssueId }]);
+            expect(broadcastPayload.payload.assignedUsers).toEqual([
+                { userId: "user-newly-assigned", email: "new@example.com" }
+            ]);
+        });
+
+        it("returns 'Already assigned' without broadcasting when all requested users are already assigned", async () =>
+        {
+            let broadcastCalled = false;
+
+            prisma.issues.findUnique = mock(() => Promise.resolve({
+                board: {
+                    id: validBoardId,
+                    org: {
+                        id: validOrgId,
+                        members: [{ userId, role: "admin", accepted: true }]
+                    }
+                }
+            })) as any;
+
+            prisma.membership.findMany = mock(() => Promise.resolve([
+                {
+                    userId: "user-already-assigned",
+                    user: {
+                        email: "already@example.com",
+                        issueMappings: [{ userId: "user-already-assigned" }]
+                    }
+                }
+            ])) as any;
+
+            wsBroadcaster.broadcast = mock(() =>
+            {
+                broadcastCalled = true;
+                return Promise.resolve(true);
+            }) as any;
+
+            const req: any = {
+                id: userId,
+                params: { issueId: validIssueId },
+                body: { email: ["already@example.com", "already@example.com"] }
+            };
+            const res = createMockRes();
+
+            await assignIssue(req, res);
+
+            expect(res.statusCode).toBe(200);
+            expect(res.body.success).toBe(true);
+            expect(res.body.data).toBe("Already assigned");
+            expect(broadcastCalled).toBe(false);
+        });
+
+        it("throws ValidationError when an email does not belong to an org member", async () =>
+        {
+            prisma.issues.findUnique = mock(() => Promise.resolve({
+                board: {
+                    id: validBoardId,
+                    org: {
+                        id: validOrgId,
+                        members: [{ userId, role: "admin", accepted: true }]
+                    }
+                }
+            })) as any;
+
+            prisma.membership.findMany = mock(() => Promise.resolve([
+                {
+                    userId: "user-1",
+                    user: {
+                        email: "valid@example.com",
+                        issueMappings: []
+                    }
+                }
+            ])) as any;
+
+            const req: any = {
+                id: userId,
+                params: { issueId: validIssueId },
+                body: { email: ["valid@example.com", "nonmember@example.com"] }
+            };
+            const res = createMockRes();
+
+            await expect(assignIssue(req, res)).rejects.toThrow("One or more emails invalid or already assigned");
+        });
+    });
+
+    describe("loginHandler user enumeration and timing mitigation", () =>
+    {
+        const origUserFindUnique = prisma.user.findUnique;
+
+        afterEach(() =>
+        {
+            (prisma.user as any).findUnique = origUserFindUnique;
+        });
+
+        it("returns 400 when input validation fails", async () =>
+        {
+            const req: any = {
+                body: { email: "not-an-email", password: "short" }
+            };
+            const res = createMockRes();
+
+            await loginHandler(req, res);
+
+            expect(res.statusCode).toBe(400);
+            expect(res.body.success).toBe(false);
+            expect(res.body.error).toBe("Invalid inputs");
+        });
+
+        it("returns 401 with 'Invalid email or password' when user does not exist (not 404)", async () =>
+        {
+            (prisma.user as any).findUnique = mock(() => Promise.resolve(null)) as any;
+
+            const req: any = {
+                body: { email: "nonexistent@example.com", password: "password123" }
+            };
+            const res = createMockRes();
+
+            await loginHandler(req, res);
+
+            expect(res.statusCode).toBe(401);
+            expect(res.body.success).toBe(false);
+            expect(res.body.error).toBe("Invalid email or password");
+        });
+
+        it("returns 401 with 'Invalid email or password' when password is wrong (not 'Invalid Password')", async () =>
+        {
+            const hashedPassword = await bcrypt.hash("correct-password", 10);
+            (prisma.user as any).findUnique = mock(() => Promise.resolve({
+                id: "user-uuid-1",
+                email: "user@example.com",
+                password: hashedPassword
+            })) as any;
+
+            const req: any = {
+                body: { email: "user@example.com", password: "wrong-password" }
+            };
+            const res = createMockRes();
+
+            await loginHandler(req, res);
+
+            expect(res.statusCode).toBe(401);
+            expect(res.body.success).toBe(false);
+            expect(res.body.error).toBe("Invalid email or password");
+        });
+
+        it("returns 200 with JWT token when credentials are valid", async () =>
+        {
+            const rawPassword = "valid-password123";
+            const hashedPassword = await bcrypt.hash(rawPassword, 10);
+            (prisma.user as any).findUnique = mock(() => Promise.resolve({
+                id: "user-uuid-1",
+                email: "user@example.com",
+                password: hashedPassword
+            })) as any;
+
+            const req: any = {
+                body: { email: "user@example.com", password: rawPassword }
+            };
+            const res = createMockRes();
+
+            await loginHandler(req, res);
+
+            expect(res.statusCode).toBe(200);
+            expect(res.body.success).toBe(true);
+            expect(typeof res.body.data).toBe("string");
+        });
+
+        it("returns 500 when database throws an unexpected error", async () =>
+        {
+            (prisma.user as any).findUnique = mock(() => Promise.reject(new Error("DB connection lost"))) as any;
+
+            const req: any = {
+                body: { email: "user@example.com", password: "password123" }
+            };
+            const res = createMockRes();
+
+            await loginHandler(req, res);
+
+            expect(res.statusCode).toBe(500);
+            expect(res.body.success).toBe(false);
+            expect(res.body.error).toBe("Internal Server error");
+        });
+    });
 });
+

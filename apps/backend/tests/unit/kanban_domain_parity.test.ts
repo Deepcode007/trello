@@ -97,34 +97,58 @@ describe("Kanban Domain Parity & Event Sourcing Suite", () => {
         });
 
         it("records board events with monotonic sequence numbers", async () => {
-            const origFindFirst = prisma.board_events.findFirst;
-            const origCreate = prisma.board_events.create;
+            const origTransaction = prisma.$transaction;
 
             let currentSeq = 10n;
-            prisma.board_events.findFirst = mock(() => Promise.resolve({ sequence: currentSeq })) as any;
-            prisma.board_events.create = mock((args: any) => Promise.resolve({
-                id: "new-evt-id",
-                sequence: args.data.sequence
-            })) as any;
+            let capturedData: any = null;
+            let advisoryLockCalled = false;
+
+            prisma.$transaction = mock(async (fn: any) => {
+                const tx = {
+                    $executeRaw: mock(() => {
+                        advisoryLockCalled = true;
+                        return Promise.resolve();
+                    }),
+                    board_events: {
+                        findFirst: mock(() => Promise.resolve({ sequence: currentSeq })),
+                        create: mock((args: any) => {
+                            capturedData = args.data;
+                            return Promise.resolve({
+                                id: "new-evt-id",
+                                sequence: args.data.sequence
+                            });
+                        })
+                    }
+                };
+                return fn(tx);
+            }) as any;
 
             const rec = await wsBroadcaster.recordBoardEvent(validBoardId, "card:created", { cardId: "c-1" });
             expect(rec).not.toBeNull();
             expect(rec?.sequence).toBe(11n);
-            expect(prisma.board_events.create).toHaveBeenCalled();
+            expect(advisoryLockCalled).toBe(true);
+            expect(capturedData.sequence).toBe(11n);
+            expect(capturedData.eventType).toBe("card:created");
 
-            prisma.board_events.findFirst = origFindFirst;
-            prisma.board_events.create = origCreate;
+            prisma.$transaction = origTransaction;
         });
 
         it("broadcasts event and attaches sequence number from recorded event", async () => {
-            const origFindFirst = prisma.board_events.findFirst;
-            const origCreate = prisma.board_events.create;
+            const origTransaction = prisma.$transaction;
 
-            prisma.board_events.findFirst = mock(() => Promise.resolve({ sequence: 5n })) as any;
-            prisma.board_events.create = mock((args: any) => Promise.resolve({
-                id: "evt-uuid-5",
-                sequence: args.data.sequence
-            })) as any;
+            prisma.$transaction = mock(async (fn: any) => {
+                const tx = {
+                    $executeRaw: mock(() => Promise.resolve()),
+                    board_events: {
+                        findFirst: mock(() => Promise.resolve({ sequence: 5n })),
+                        create: mock((args: any) => Promise.resolve({
+                            id: "evt-uuid-5",
+                            sequence: args.data.sequence
+                        }))
+                    }
+                };
+                return fn(tx);
+            }) as any;
 
             let receivedEvent: any = null;
             const listener = (data: any) => { receivedEvent = data; };
@@ -140,60 +164,20 @@ describe("Kanban Domain Parity & Event Sourcing Suite", () => {
             expect(receivedEvent.eventId).toBe("evt-uuid-5");
 
             wsBroadcaster.off(`board:${validBoardId}`, listener);
-            prisma.board_events.findFirst = origFindFirst;
-            prisma.board_events.create = origCreate;
+            prisma.$transaction = origTransaction;
         });
 
-        it("recordBoardEvent retries on P2002 unique constraint conflict and succeeds on next attempt", async () => {
-            const origFindFirst = prisma.board_events.findFirst;
-            const origCreate = prisma.board_events.create;
+        it("recordBoardEvent returns null when transaction fails", async () => {
+            const origTransaction = prisma.$transaction;
 
-            let attempt = 0;
-            prisma.board_events.findFirst = mock(() => {
-                attempt++;
-                return Promise.resolve({ sequence: BigInt(attempt * 10) });
-            }) as any;
-
-            let createCalls = 0;
-            prisma.board_events.create = mock((args: any) => {
-                createCalls++;
-                if (createCalls === 1) {
-                    const err: any = new Error("Unique constraint failed");
-                    err.code = "P2002";
-                    return Promise.reject(err);
-                }
-                return Promise.resolve({
-                    id: "evt-retried-backend",
-                    sequence: args.data.sequence
-                });
-            }) as any;
-
-            const rec = await wsBroadcaster.recordBoardEvent(validBoardId, "card:created", { cardId: "c-retry" });
-            expect(rec).not.toBeNull();
-            expect(rec?.id).toBe("evt-retried-backend");
-            expect(createCalls).toBe(2);
-
-            prisma.board_events.findFirst = origFindFirst;
-            prisma.board_events.create = origCreate;
-        });
-
-        it("recordBoardEvent returns null when all 3 attempts fail with P2002", async () => {
-            const origFindFirst = prisma.board_events.findFirst;
-            const origCreate = prisma.board_events.create;
-
-            prisma.board_events.findFirst = mock(() => Promise.resolve({ sequence: 10n })) as any;
-            prisma.board_events.create = mock(() => {
-                const err: any = new Error("Unique constraint failed");
-                err.code = "P2002";
-                return Promise.reject(err);
+            prisma.$transaction = mock(async () => {
+                throw new Error("Advisory lock acquisition or transaction failure");
             }) as any;
 
             const rec = await wsBroadcaster.recordBoardEvent(validBoardId, "card:created", { cardId: "c-fail" });
             expect(rec).toBeNull();
-            expect(prisma.board_events.create).toHaveBeenCalledTimes(3);
 
-            prisma.board_events.findFirst = origFindFirst;
-            prisma.board_events.create = origCreate;
+            prisma.$transaction = origTransaction;
         });
 
         it("recordBoardEvent returns null immediately for invalid or empty boardId", async () => {
@@ -660,6 +644,7 @@ describe("Kanban Domain Parity & Event Sourcing Suite", () => {
         it("creates checklist on card and broadcasts checklist:created", async () => {
             const origIssueFind = prisma.issues.findUnique;
             const origChecklistCount = prisma.checklists.count;
+            const origChecklistFindFirst = prisma.checklists.findFirst;
             const origChecklistCreate = prisma.checklists.create;
 
             prisma.issues.findUnique = mock(() => Promise.resolve({
@@ -672,7 +657,7 @@ describe("Kanban Domain Parity & Event Sourcing Suite", () => {
                 }
             })) as any;
 
-            prisma.checklists.count = mock(() => Promise.resolve(0)) as any;
+            prisma.checklists.findFirst = mock(() => Promise.resolve(null)) as any;
             prisma.checklists.create = mock((args: any) => Promise.resolve({
                 id: validChecklistId,
                 title: args.data.title,
@@ -702,6 +687,59 @@ describe("Kanban Domain Parity & Event Sourcing Suite", () => {
 
             prisma.issues.findUnique = origIssueFind;
             prisma.checklists.count = origChecklistCount;
+            prisma.checklists.findFirst = origChecklistFindFirst;
+            prisma.checklists.create = origChecklistCreate;
+        });
+
+        it("createChecklist calculates position based on highest existing checklist position rather than count to prevent collisions", async () => {
+            const origIssueFind = prisma.issues.findUnique;
+            const origChecklistFindFirst = prisma.checklists.findFirst;
+            const origChecklistCreate = prisma.checklists.create;
+
+            prisma.issues.findUnique = mock(() => Promise.resolve({
+                id: validIssueId,
+                boardId: validBoardId,
+                board: {
+                    org: {
+                        members: [{ userId: adminUserId, accepted: true, role: "employee" }]
+                    }
+                }
+            })) as any;
+
+            // Scenario: 3 checklists existed (1000, 2000, 3000), checklist 2 deleted.
+            // Remaining highest position is 3000.
+            prisma.checklists.findFirst = mock((args: any) => {
+                expect(args.where).toEqual({ issueId: validIssueId });
+                expect(args.orderBy).toEqual({ position: "desc" });
+                return Promise.resolve({ position: 3000 });
+            }) as any;
+
+            let createdPosition = 0;
+            prisma.checklists.create = mock((args: any) => {
+                createdPosition = args.data.position;
+                return Promise.resolve({
+                    id: validChecklistId,
+                    title: args.data.title,
+                    position: args.data.position,
+                    issueId: validIssueId,
+                    items: []
+                });
+            }) as any;
+
+            const req: any = {
+                id: adminUserId,
+                params: { issueId: validIssueId },
+                body: { title: "Definition of Done" }
+            };
+            const res = createMockRes();
+
+            await createChecklist(req, res);
+
+            expect(res.statusCode).toBe(201);
+            expect(createdPosition).toBe(4000); // 3000 + 1000, avoiding collision with existing checklist at 3000
+
+            prisma.issues.findUnique = origIssueFind;
+            prisma.checklists.findFirst = origChecklistFindFirst;
             prisma.checklists.create = origChecklistCreate;
         });
 
@@ -753,9 +791,10 @@ describe("Kanban Domain Parity & Event Sourcing Suite", () => {
             prisma.checklist_items.update = origItemUpdate;
         });
 
-        it("addChecklistItem calculates position based on count and broadcasts checklist_item:created", async () => {
+        it("addChecklistItem calculates position based on highest position and broadcasts checklist_item:created", async () => {
             const origChecklistFind = prisma.checklists.findUnique;
             const origItemCount = prisma.checklist_items.count;
+            const origItemFindFirst = prisma.checklist_items.findFirst;
             const origItemCreate = prisma.checklist_items.create;
 
             prisma.checklists.findUnique = mock(() => Promise.resolve({
@@ -769,7 +808,7 @@ describe("Kanban Domain Parity & Event Sourcing Suite", () => {
                 }
             })) as any;
 
-            prisma.checklist_items.count = mock(() => Promise.resolve(2)) as any;
+            prisma.checklist_items.findFirst = mock(() => Promise.resolve({ position: 2000 })) as any;
             let createdPosition = 0;
             prisma.checklist_items.create = mock((args: any) => {
                 createdPosition = args.data.position;
@@ -796,11 +835,12 @@ describe("Kanban Domain Parity & Event Sourcing Suite", () => {
             await addChecklistItem(req, res);
 
             expect(res.statusCode).toBe(201);
-            expect(createdPosition).toBe(3000); // (2 + 1) * 1000
+            expect(createdPosition).toBe(3000); // 2000 + 1000
             expect(broadcastType).toBe("checklist_item:created");
 
             prisma.checklists.findUnique = origChecklistFind;
             prisma.checklist_items.count = origItemCount;
+            prisma.checklist_items.findFirst = origItemFindFirst;
             prisma.checklist_items.create = origItemCreate;
         });
 
@@ -936,6 +976,7 @@ describe("Kanban Domain Parity & Event Sourcing Suite", () => {
         it("addChecklistItem sets optional dueDate properly", async () => {
             const origChecklistFind = prisma.checklists.findUnique;
             const origItemCount = prisma.checklist_items.count;
+            const origItemFindFirst = prisma.checklist_items.findFirst;
             const origItemCreate = prisma.checklist_items.create;
 
             prisma.checklists.findUnique = mock(() => Promise.resolve({
@@ -947,7 +988,7 @@ describe("Kanban Domain Parity & Event Sourcing Suite", () => {
                 }
             })) as any;
 
-            prisma.checklist_items.count = mock(() => Promise.resolve(0)) as any;
+            prisma.checklist_items.findFirst = mock(() => Promise.resolve(null)) as any;
             let createdData: any = null;
             prisma.checklist_items.create = mock((args: any) => {
                 createdData = args.data;
@@ -969,6 +1010,7 @@ describe("Kanban Domain Parity & Event Sourcing Suite", () => {
 
             prisma.checklists.findUnique = origChecklistFind;
             prisma.checklist_items.count = origItemCount;
+            prisma.checklist_items.findFirst = origItemFindFirst;
             prisma.checklist_items.create = origItemCreate;
         });
 
