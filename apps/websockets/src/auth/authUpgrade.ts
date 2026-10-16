@@ -1,4 +1,4 @@
-import jwt, { type JwtPayload } from "backend/src/helpers/jwt";
+import jwt, { type JwtPayload } from "jsonwebtoken";
 
 export interface AuthenticatedUser
 {
