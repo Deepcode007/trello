@@ -16,8 +16,9 @@
         "typescript": "^5"
     },
     "dependencies": {
-        "backend": "*",
         "db": "*",
+        "jsonwebtoken": "^9.0.3",
+        "realtime": "*",
         "zod": "^4.6.5"
     }
 }

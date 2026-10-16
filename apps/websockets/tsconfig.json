@@ -18,15 +18,11 @@
     "noImplicitOverride": true,
     "noUnusedLocals": false,
     "noUnusedParameters": false,
-    "noPropertyAccessFromIndexSignature": false,
-    "paths": {
-      "jsonwebtoken": ["../backend/node_modules/@types/jsonwebtoken/index.d.ts"]
-    }
+    "noPropertyAccessFromIndexSignature": false
   },
   "include": [
     "index.ts",
     "src/**/*",
-    "tests/**/*",
-    "../backend/src/types/express.d.ts"
+    "tests/**/*"
   ]
 }
