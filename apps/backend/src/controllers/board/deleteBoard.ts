@@ -53,7 +53,7 @@ export async function deleteBoard(req: Request, res: Response)
     wsBroadcaster.broadcast(result.data.boardId, {
         type: "board:deleted",
         payload: { boardId: result.data.boardId }
-    });
+    }, { skipRecording: true });
 
     return res.status(200).json({
         success: true,

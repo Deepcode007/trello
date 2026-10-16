@@ -146,9 +146,12 @@ export class WebSocketBroadcaster extends EventEmitter
             try
             {
                 return await recordOperation(options.tx);
-            } catch (err)
+            } catch (err: any)
             {
-                console.error(`[Broadcaster] Failed to record board event for board ${rawBoardId} in transaction:`, err);
+                if (err?.code !== "P2003")
+                {
+                    console.error(`[Broadcaster] Failed to record board event for board ${rawBoardId} in transaction:`, err?.message || err);
+                }
                 if (throwOnError) throw err;
                 return null;
             }
@@ -157,9 +160,12 @@ export class WebSocketBroadcaster extends EventEmitter
         try
         {
             return await prisma.$transaction(recordOperation);
-        } catch (err)
+        } catch (err: any)
         {
-            console.error(`[Broadcaster] Failed to record board event for board ${rawBoardId}:`, err);
+            if (err?.code !== "P2003")
+            {
+                console.error(`[Broadcaster] Failed to record board event for board ${rawBoardId}:`, err?.message || err);
+            }
             if (throwOnError) throw err;
             return null;
         }
@@ -181,9 +187,12 @@ export class WebSocketBroadcaster extends EventEmitter
                 });
                 return true;
             }
-        } catch (err)
+        } catch (err: any)
         {
-            console.error(`[Broadcaster] Failed to mark board event ${eventId} as published:`, err);
+            if (err?.code !== "P2025")
+            {
+                console.error(`[Broadcaster] Failed to mark board event ${eventId} as published:`, err?.message || err);
+            }
         }
         return false;
     }
@@ -308,7 +317,7 @@ export class WebSocketBroadcaster extends EventEmitter
         let sequence: string | undefined = options?.sequence !== undefined ? options.sequence.toString() : (eventObj as any).sequence;
 
         // Persist event into board_events outbox table if not a system/ping heartbeat and not pre-recorded
-        if (eventObj.type !== "ping" && eventObj.type !== "pong" && !options?.skipRecording)
+        if (eventObj.type !== "ping" && eventObj.type !== "pong" && eventObj.type !== "board:deleted" && !options?.skipRecording)
         {
             if (!eventId || sequence === undefined)
             {
@@ -326,17 +335,12 @@ export class WebSocketBroadcaster extends EventEmitter
                         (eventObj as any).sequence = sequence;
                         (eventObj as any).eventId = eventId;
                         payloadStr = JSON.stringify(eventObj);
-                    } else
+                    } else if (options?.throwOnError)
                     {
-                        console.error(`[Broadcaster] Failed to persist outbox event for board ${boardId} (${eventObj.type})`);
-                        if (options?.throwOnError)
-                        {
-                            throw new Error(`Failed to persist outbox event for board ${boardId} (${eventObj.type})`);
-                        }
+                        throw new Error(`Failed to persist outbox event for board ${boardId} (${eventObj.type})`);
                     }
                 } catch (err)
                 {
-                    console.error(`[Broadcaster] Outbox persistence error for board ${boardId}:`, err);
                     if (options?.throwOnError || options?.tx) throw err;
                 }
             } else
