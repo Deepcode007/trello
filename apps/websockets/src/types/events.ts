@@ -96,3 +96,19 @@ export function cleanBoardId(topicOrBoardId: string): string
     const trimmed = topicOrBoardId.trim();
     return trimmed.startsWith("board_") ? trimmed.slice(6) : trimmed;
 }
+
+export interface RecordBoardEventOptions
+{
+    tx?: any;
+    published?: boolean;
+    throwOnError?: boolean;
+}
+
+export interface BroadcastOptions
+{
+    eventId?: string;
+    sequence?: bigint | string;
+    tx?: any;
+    throwOnError?: boolean;
+    skipRecording?: boolean;
+}

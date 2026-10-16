@@ -10,6 +10,8 @@ import
     type CardUpdatedPayload,
     type CardDeletedPayload,
     type ListReorderedPayload,
+    type RecordBoardEventOptions,
+    type BroadcastOptions,
     formatBoardTopic,
     cleanBoardId
 } from "../types/events";
@@ -98,16 +100,27 @@ export class WebSocketBroadcaster extends EventEmitter
     public async recordBoardEvent(
         boardId: string,
         eventType: string,
-        payload: unknown
+        payload: unknown,
+        options?: RecordBoardEventOptions
     ): Promise<{ id: string; sequence: bigint } | null>
     {
         const rawBoardId = cleanBoardId(boardId);
         if (!rawBoardId) return null;
 
-        // Locking a boardid for 1-3ms to avoid sequence duplication
-        return prisma.$transaction(async (tx) =>
+        const isPublished = options?.published ?? false;
+        const throwOnError = Boolean(options?.throwOnError || options?.tx);
+
+        const recordOperation = async (tx: any) =>
         {
-            await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${rawBoardId}))`;
+            if (!tx || !tx.board_events || typeof tx.board_events.findFirst !== "function")
+            {
+                return null;
+            }
+
+            if (typeof tx.$executeRaw === "function")
+            {
+                await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${rawBoardId}))`;
+            }
 
             const lastEvent = await tx.board_events.findFirst({
                 where: { boardId: rawBoardId },
@@ -121,15 +134,148 @@ export class WebSocketBroadcaster extends EventEmitter
                     sequence: (lastEvent?.sequence ?? 0n) + 1n,
                     eventType,
                     payload: (payload ?? {}) as any,
-                    published: true,
-                    publishedAt: new Date()
+                    published: isPublished,
+                    publishedAt: isPublished ? new Date() : null
                 },
                 select: { id: true, sequence: true }
             });
-        }).catch(() => null);
+        };
+
+        if (options?.tx)
+        {
+            try
+            {
+                return await recordOperation(options.tx);
+            } catch (err)
+            {
+                console.error(`[Broadcaster] Failed to record board event for board ${rawBoardId} in transaction:`, err);
+                if (throwOnError) throw err;
+                return null;
+            }
+        }
+
+        try
+        {
+            return await prisma.$transaction(recordOperation);
+        } catch (err)
+        {
+            console.error(`[Broadcaster] Failed to record board event for board ${rawBoardId}:`, err);
+            if (throwOnError) throw err;
+            return null;
+        }
     }
 
-    public async broadcast<T = unknown>(boardId: string, event: BroadcastEvent<T> | string): Promise<boolean>
+    public async markEventPublished(eventId: string, publishedAt: Date = new Date()): Promise<boolean>
+    {
+        if (!eventId || typeof eventId !== "string") return false;
+        try
+        {
+            if (prisma && prisma.board_events && typeof prisma.board_events.update === "function")
+            {
+                await prisma.board_events.update({
+                    where: { id: eventId },
+                    data: {
+                        published: true,
+                        publishedAt
+                    }
+                });
+                return true;
+            }
+        } catch (err)
+        {
+            console.error(`[Broadcaster] Failed to mark board event ${eventId} as published:`, err);
+        }
+        return false;
+    }
+
+    public async retryPendingEvents(boardId?: string, limit: number = 50): Promise<number>
+    {
+        const rawBoardId = boardId ? cleanBoardId(boardId) : undefined;
+        try
+        {
+            if (!prisma?.board_events?.findMany) return 0;
+
+            const pendingEvents = await prisma.board_events.findMany({
+                where: {
+                    published: false,
+                    ...(rawBoardId ? { boardId: rawBoardId } : {})
+                },
+                orderBy: { sequence: "asc" },
+                take: limit
+            });
+
+            let publishedCount = 0;
+            for (const evt of pendingEvents)
+            {
+                const success = await this.broadcast(
+                    evt.boardId,
+                    {
+                        type: evt.eventType,
+                        payload: evt.payload
+                    },
+                    {
+                        eventId: evt.id,
+                        sequence: evt.sequence
+                    }
+                );
+                if (success)
+                {
+                    publishedCount++;
+                }
+            }
+            return publishedCount;
+        } catch (err)
+        {
+            console.error("[Broadcaster] Failed to retry pending outbox events:", err);
+            return 0;
+        }
+    }
+
+    public async executeWithOutbox<R>(
+        boardId: string,
+        event: { type: string; payload: unknown },
+        operation: (tx: any) => Promise<R>
+    ): Promise<{ result: R; eventId: string; sequence: bigint; published: boolean }>
+    {
+        const rawBoardId = cleanBoardId(boardId);
+        if (!rawBoardId) throw new Error("Invalid board ID for outbox transaction");
+
+        const { opResult, recordedEvent } = await prisma.$transaction(async (tx) =>
+        {
+            const opResult = await operation(tx);
+            const recordedEvent = await this.recordBoardEvent(rawBoardId, event.type, event.payload, {
+                tx,
+                published: false,
+                throwOnError: true
+            });
+            if (!recordedEvent)
+            {
+                throw new Error(`Failed to record outbox event for board ${rawBoardId}`);
+            }
+            return { opResult, recordedEvent };
+        });
+
+        const published = await this.broadcast(rawBoardId, {
+            type: event.type,
+            payload: event.payload
+        }, {
+            eventId: recordedEvent.id,
+            sequence: recordedEvent.sequence
+        });
+
+        return {
+            result: opResult,
+            eventId: recordedEvent.id,
+            sequence: recordedEvent.sequence,
+            published
+        };
+    }
+
+    public async broadcast<T = unknown>(
+        boardId: string,
+        event: BroadcastEvent<T> | string,
+        options?: BroadcastOptions
+    ): Promise<boolean>
     {
         if (!boardId || typeof boardId !== "string") return false;
 
@@ -158,19 +304,47 @@ export class WebSocketBroadcaster extends EventEmitter
             payloadStr = JSON.stringify(eventObj);
         }
 
-        // Persist event into board_events outbox table if not a system/ping heartbeat
-        if (eventObj.type !== "ping" && eventObj.type !== "pong")
+        let eventId: string | undefined = options?.eventId ?? (eventObj as any).eventId;
+        let sequence: string | undefined = options?.sequence !== undefined ? options.sequence.toString() : (eventObj as any).sequence;
+
+        // Persist event into board_events outbox table if not a system/ping heartbeat and not pre-recorded
+        if (eventObj.type !== "ping" && eventObj.type !== "pong" && !options?.skipRecording)
         {
-            try
+            if (!eventId || sequence === undefined)
             {
-                const recorded = await this.recordBoardEvent(boardId, eventObj.type, eventObj.payload);
-                if (recorded)
+                try
                 {
-                    (eventObj as any).sequence = recorded.sequence.toString();
-                    (eventObj as any).eventId = recorded.id;
-                    payloadStr = JSON.stringify(eventObj);
+                    const recorded = await this.recordBoardEvent(boardId, eventObj.type, eventObj.payload, {
+                        tx: options?.tx,
+                        published: false,
+                        throwOnError: Boolean(options?.throwOnError || options?.tx)
+                    });
+                    if (recorded)
+                    {
+                        eventId = recorded.id;
+                        sequence = recorded.sequence.toString();
+                        (eventObj as any).sequence = sequence;
+                        (eventObj as any).eventId = eventId;
+                        payloadStr = JSON.stringify(eventObj);
+                    } else
+                    {
+                        console.error(`[Broadcaster] Failed to persist outbox event for board ${boardId} (${eventObj.type})`);
+                        if (options?.throwOnError)
+                        {
+                            throw new Error(`Failed to persist outbox event for board ${boardId} (${eventObj.type})`);
+                        }
+                    }
+                } catch (err)
+                {
+                    console.error(`[Broadcaster] Outbox persistence error for board ${boardId}:`, err);
+                    if (options?.throwOnError || options?.tx) throw err;
                 }
-            } catch { }
+            } else
+            {
+                (eventObj as any).sequence = sequence;
+                (eventObj as any).eventId = eventId;
+                payloadStr = JSON.stringify(eventObj);
+            }
         }
 
         // Always emit on local EventEmitter for in-process listeners
@@ -181,39 +355,50 @@ export class WebSocketBroadcaster extends EventEmitter
             this.emit(`board:${topic}`, eventObj);
         }
 
+        let transportSuccess = false;
+
         // If Bun.serve instance is available (same process / dual-server pattern)
         if (this.server)
         {
             this.server.publish(topic, payloadStr);
-            return true;
-        }
-
-        // Fallback: If running in separate processes (e.g., Express on 3000 and Bun.serve on 3001)
-        try
+            transportSuccess = true;
+        } else
         {
-            const endpoint = `http://127.0.0.1:${this.wsPort}/internal/broadcast`;
-            const internalSecret = process.env.INTERNAL_BROADCAST_SECRET || process.env.jwt_key || process.env.JWT_SECRET || "";
-            const headers: Record<string, string> = { "Content-Type": "application/json" };
-            if (internalSecret)
+            // Fallback: If running in separate processes (e.g., Express on 3000 and Bun.serve on 3001)
+            try
             {
-                headers["x-internal-secret"] = internalSecret;
-            }
+                const endpoint = `http://127.0.0.1:${this.wsPort}/internal/broadcast`;
+                const internalSecret = process.env.INTERNAL_BROADCAST_SECRET || process.env.jwt_key || process.env.JWT_SECRET || "";
+                const headers: Record<string, string> = { "Content-Type": "application/json" };
+                if (internalSecret)
+                {
+                    headers["x-internal-secret"] = internalSecret;
+                }
 
-            const res = await fetch(endpoint, {
-                method: "POST",
-                headers,
-                body: JSON.stringify({ boardId, event: eventObj }),
-                signal: AbortSignal.timeout(1000)
-            });
-            return res.ok;
-        } catch
-        {
-            // WS server is either offline or unreachable; fail gracefully without throwing
-            return false;
+                const res = await fetch(endpoint, {
+                    method: "POST",
+                    headers,
+                    body: JSON.stringify({ boardId, event: eventObj }),
+                    signal: AbortSignal.timeout(1000)
+                });
+                transportSuccess = res.ok;
+            } catch
+            {
+                // WS server is either offline or unreachable; fail gracefully without throwing
+                transportSuccess = false;
+            }
         }
+
+        // Only mark event published AFTER successful transport!
+        if (transportSuccess && eventId)
+        {
+            await this.markEventPublished(eventId);
+        }
+
+        return transportSuccess;
     }
 
-    public async evictUser(userId: string, orgId?: string, boardIds?: string[]): Promise<boolean>
+    public async evictUser(userId: string, orgId?: string, boardIds?: string[], maxRetries: number = 2): Promise<boolean>
     {
         if (!userId || typeof userId !== "string" || !userId.trim())
         {
@@ -239,92 +424,101 @@ export class WebSocketBroadcaster extends EventEmitter
             }
         }
 
-        try
-        {
-            const endpoint = `http://127.0.0.1:${this.wsPort}/internal/evict-user`;
-            const internalSecret = process.env.INTERNAL_BROADCAST_SECRET || process.env.jwt_key || process.env.JWT_SECRET || "";
-            const headers: Record<string, string> = { "Content-Type": "application/json" };
-            if (internalSecret) headers["x-internal-secret"] = internalSecret;
+        const endpoint = `http://127.0.0.1:${this.wsPort}/internal/evict-user`;
+        const internalSecret = process.env.INTERNAL_BROADCAST_SECRET || process.env.jwt_key || process.env.JWT_SECRET || "";
+        const headers: Record<string, string> = { "Content-Type": "application/json" };
+        if (internalSecret) headers["x-internal-secret"] = internalSecret;
+        const bodyStr = JSON.stringify({
+            userId,
+            orgId,
+            boardIds,
+            reason: "FORBIDDEN_REVOKED: Organization membership terminated"
+        });
 
-            const res = await fetch(endpoint, {
-                method: "POST",
-                headers,
-                body: JSON.stringify({
-                    userId,
-                    orgId,
-                    boardIds,
-                    reason: "FORBIDDEN_REVOKED: Organization membership terminated"
-                }),
-                signal: AbortSignal.timeout(1000)
-            });
-            return res.ok;
-        } catch
+        for (let attempt = 0; attempt <= maxRetries; attempt++)
         {
-            return false;
+            try
+            {
+                const res = await fetch(endpoint, {
+                    method: "POST",
+                    headers,
+                    body: bodyStr,
+                    signal: AbortSignal.timeout(1000)
+                });
+                if (res.ok) return true;
+            } catch
+            {
+                // Network error / timeout
+            }
+            if (attempt < maxRetries)
+            {
+                await new Promise((r) => setTimeout(r, (attempt + 1) * 50));
+            }
         }
+        return false;
     }
 
     // Helper: Card moved across sections or reordered
-    public async broadcastCardMoved(boardId: string, payload: CardMovedPayload): Promise<boolean>
+    public async broadcastCardMoved(boardId: string, payload: CardMovedPayload, options?: BroadcastOptions): Promise<boolean>
     {
         return this.broadcast(boardId, {
             type: "card:moved",
             payload
-        });
+        }, options);
     }
 
     // Helper: Card created
-    public async broadcastCardCreated(boardId: string, cardData: unknown): Promise<boolean>
+    public async broadcastCardCreated(boardId: string, cardData: unknown, options?: BroadcastOptions): Promise<boolean>
     {
         return this.broadcast(boardId, {
             type: "card:created",
             payload: { cardData }
-        });
+        }, options);
     }
 
     // Helper: Card updated
-    public async broadcastCardUpdated(boardId: string, cardId: string, updates: unknown): Promise<boolean>
+    public async broadcastCardUpdated(boardId: string, cardId: string, updates: unknown, options?: BroadcastOptions): Promise<boolean>
     {
         return this.broadcast(boardId, {
             type: "card:updated",
             payload: { cardId, updates }
-        });
+        }, options);
     }
 
     // Helper: Card deleted
-    public async broadcastCardDeleted(boardId: string, cardId: string): Promise<boolean>
+    public async broadcastCardDeleted(boardId: string, cardId: string, options?: BroadcastOptions): Promise<boolean>
     {
         return this.broadcast(boardId, {
             type: "card:deleted",
             payload: { cardId }
-        });
+        }, options);
     }
 
     // Helper: List / section reordered
-    public async broadcastListReordered(boardId: string, listId: string, newPosition: number): Promise<boolean>
+    public async broadcastListReordered(boardId: string, listId: string, newPosition: number, options?: BroadcastOptions): Promise<boolean>
     {
         return this.broadcast(boardId, {
             type: "list:reordered",
             payload: { listId, newPosition }
-        });
+        }, options);
     }
 
     // Helper: User joined board
-    public async broadcastUserJoined(boardId: string, user: { userId: string; name?: string; email?: string }): Promise<boolean>
+    public async broadcastUserJoined(boardId: string, user: { userId: string; name?: string; email?: string }, options?: BroadcastOptions): Promise<boolean>
     {
         return this.broadcast(boardId, {
             type: "user:joined",
             payload: { ...user, boardId }
-        });
+        }, options);
     }
 
     // Helper: User left board
-    public async broadcastUserLeft(boardId: string, userId: string): Promise<boolean>
+    public async broadcastUserLeft(boardId: string, userId: string, options?: BroadcastOptions): Promise<boolean>
     {
         return this.broadcast(boardId, {
             type: "user:left",
             payload: { userId, boardId }
-        });
+        }, options);
     }
 }
 
