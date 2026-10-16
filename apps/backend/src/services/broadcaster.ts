@@ -1,64 +1,12 @@
 import { EventEmitter } from "node:events";
+import { randomUUID } from "node:crypto";
 import { prisma } from "db/prisma";
-import { env } from "../..";
+import { cleanBoardId, formatBoardTopic, type BroadcastEvent, type BroadcastOptions, type CardMovedPayload, type CardCreatedPayload, type CardUpdatedPayload, type CardDeletedPayload, type ListReorderedPayload } from "realtime";
 
-const GLOBAL_BROADCASTER_KEY = Symbol.for("trello.ws.broadcaster");
+let singleton: WebSocketBroadcaster | undefined;
 
-export interface BroadcastEvent<T = unknown>
-{
-    type: string;
-    payload: T;
-    timestamp?: number;
-}
-
-export interface CardMovedPayload
-{
-    cardId: string;
-    sourceList?: string | null;
-    destList?: string | null;
-    position?: number;
-    [key: string]: unknown;
-}
-
-export interface CardCreatedPayload
-{
-    cardData: unknown;
-    [key: string]: unknown;
-}
-
-export interface CardUpdatedPayload
-{
-    cardId: string;
-    updates: unknown;
-    [key: string]: unknown;
-}
-
-export interface CardDeletedPayload
-{
-    cardId: string;
-    [key: string]: unknown;
-}
-
-export interface ListReorderedPayload
-{
-    listId: string;
-    newPosition: number;
-    [key: string]: unknown;
-}
-
-export function formatBoardTopic(boardId: string): string
-{
-    if (!boardId || typeof boardId !== "string" || !boardId.trim()) return "";
-    const trimmed = boardId.trim();
-    return trimmed.startsWith("board_") ? trimmed : `board_${trimmed}`;
-}
-
-export function cleanBoardId(topicOrBoardId: string): string
-{
-    if (!topicOrBoardId || typeof topicOrBoardId !== "string" || !topicOrBoardId.trim()) return "";
-    const trimmed = topicOrBoardId.trim();
-    return trimmed.startsWith("board_") ? trimmed.slice(6) : trimmed;
-}
+export { formatBoardTopic, cleanBoardId } from "realtime";
+export type { BroadcastEvent, CardMovedPayload, CardCreatedPayload, CardUpdatedPayload, CardDeletedPayload, ListReorderedPayload } from "realtime";
 
 export interface RecordBoardEventOptions
 {
@@ -67,32 +15,39 @@ export interface RecordBoardEventOptions
     throwOnError?: boolean;
 }
 
-export interface BroadcastOptions
+export type { BroadcastOptions } from "realtime";
+
+export interface OutboxEvent
 {
-    eventId?: string;
-    sequence?: bigint | string;
-    tx?: any;
-    throwOnError?: boolean;
-    skipRecording?: boolean;
+    type: string;
+    payload: unknown;
 }
 
-export type EvictionHandler = (options: {
-    userId: string;
-    orgId?: string;
-    boardIds?: string[];
-    reason?: string;
-}) => Promise<number | boolean> | number | boolean;
+type OutboxEventResolver = OutboxEvent | OutboxEvent[] | null | undefined | ((result: any) => OutboxEvent | OutboxEvent[] | null | undefined);
+
+interface ClaimedOutboxEvent
+{
+    id: string;
+    boardId: string;
+    sequence: bigint;
+    eventType: string;
+    payload: unknown;
+}
 
 export class WebSocketBroadcaster extends EventEmitter
 {
-    private server: any = null;
     private wsPort: number = 3001;
-    private evictionHandler: EvictionHandler | null = null;
+    private outboxTimer: ReturnType<typeof setInterval> | null = null;
+    private outboxDrain: Promise<string[]> | null = null;
+    private outboxQueue: Promise<void> = Promise.resolve();
+    private outboxWorkerId: string | null = null;
+    private outboxIntervalMs = Math.max(1000, Number(process.env.OUTBOX_RETRY_INTERVAL_MS) || 5000);
+    private readonly outboxLeaseMs = Math.max(10000, Number(process.env.OUTBOX_LEASE_MS) || 30000);
 
     constructor()
     {
         super();
-        const envPort = env.ws_port;
+        const envPort = process.env.ws_port;
         if (envPort && !isNaN(Number(envPort)))
         {
             this.wsPort = Number(envPort);
@@ -101,31 +56,7 @@ export class WebSocketBroadcaster extends EventEmitter
 
     public static getInstance(): WebSocketBroadcaster
     {
-        const globalStore = globalThis as unknown as Record<symbol, WebSocketBroadcaster>;
-        if (!globalStore[GLOBAL_BROADCASTER_KEY])
-        {
-            globalStore[GLOBAL_BROADCASTER_KEY] = new WebSocketBroadcaster();
-        }
-        return globalStore[GLOBAL_BROADCASTER_KEY];
-    }
-
-    public setServer(server: any): void
-    {
-        this.server = server;
-        if (server?.port)
-        {
-            this.wsPort = server.port;
-        }
-    }
-
-    public getServer(): any
-    {
-        return this.server;
-    }
-
-    public isServerAttached(): boolean
-    {
-        return this.server !== null;
+        return singleton ??= new WebSocketBroadcaster();
     }
 
     public setPort(port: number): void
@@ -133,25 +64,11 @@ export class WebSocketBroadcaster extends EventEmitter
         this.wsPort = port;
     }
 
-    public setEvictionHandler(handler: EvictionHandler): void
-    {
-        this.evictionHandler = handler;
-    }
-
-    public getEvictionHandler(): EvictionHandler | null
-    {
-        return this.evictionHandler;
-    }
-
     public publish(topic: string, message: unknown): number
     {
         const payloadStr = typeof message === "string" ? message : JSON.stringify(message);
         this.emit("publish", { topic, message, raw: payloadStr });
 
-        if (this.server && typeof this.server.publish === "function")
-        {
-            return this.server.publish(topic, payloadStr);
-        }
         return 0;
     }
 
@@ -175,9 +92,12 @@ export class WebSocketBroadcaster extends EventEmitter
                 return null;
             }
 
-            if (typeof tx.$executeRaw === "function")
+            if (typeof tx.$queryRaw === "function")
             {
-                await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${rawBoardId}))`;
+                await tx.$queryRaw`WITH advisory_lock AS MATERIALIZED (
+                    SELECT pg_advisory_xact_lock(hashtext(${rawBoardId}))
+                )
+                SELECT 1::int AS locked FROM advisory_lock`;
             }
 
             const lastEvent = await tx.board_events.findFirst({
@@ -240,7 +160,9 @@ export class WebSocketBroadcaster extends EventEmitter
                     where: { id: eventId },
                     data: {
                         published: true,
-                        publishedAt
+                        publishedAt,
+                        claimedBy: null,
+                        claimExpiresAt: null
                     }
                 });
                 return true;
@@ -257,83 +179,179 @@ export class WebSocketBroadcaster extends EventEmitter
 
     public async retryPendingEvents(boardId?: string, limit: number = 50): Promise<number>
     {
+        const workerId = this.outboxWorkerId ?? `manual-${randomUUID()}`;
         const rawBoardId = boardId ? cleanBoardId(boardId) : undefined;
-        try
-        {
-            if (!prisma?.board_events?.findMany) return 0;
+        return (await this.drainOutboxSerialized(workerId, rawBoardId, limit)).length;
+    }
 
-            const pendingEvents = await prisma.board_events.findMany({
-                where: {
-                    published: false,
-                    ...(rawBoardId ? { boardId: rawBoardId } : {})
-                },
-                orderBy: { sequence: "asc" },
-                take: limit
-            });
-
-            let publishedCount = 0;
-            for (const evt of pendingEvents)
-            {
-                const success = await this.broadcast(
-                    evt.boardId,
-                    {
-                        type: evt.eventType,
-                        payload: evt.payload
-                    },
-                    {
-                        eventId: evt.id,
-                        sequence: evt.sequence
-                    }
-                );
-                if (success)
-                {
-                    publishedCount++;
-                }
-            }
-            return publishedCount;
-        } catch (err)
+    public startOutboxWorker(intervalMs = this.outboxIntervalMs): void
+    {
+        if (this.outboxTimer) return;
+        this.outboxWorkerId = `backend-${randomUUID()}`;
+        this.outboxIntervalMs = Math.max(1000, intervalMs);
+        void this.retryPendingEvents().catch(err => console.error("[Broadcaster] Startup outbox drain failed:", err));
+        this.outboxTimer = setInterval(() =>
         {
-            console.error("[Broadcaster] Failed to retry pending outbox events:", err);
-            return 0;
+            void this.retryPendingEvents().catch(err => console.error("[Broadcaster] Outbox drain failed:", err));
+        }, this.outboxIntervalMs);
+        this.outboxTimer.unref?.();
+    }
+
+    public async stopOutboxWorker(): Promise<void>
+    {
+        if (this.outboxTimer)
+        {
+            clearInterval(this.outboxTimer);
+            this.outboxTimer = null;
         }
+        if (this.outboxDrain)
+        {
+            try { await this.outboxDrain; }
+            catch (err) { console.error("[Broadcaster] Failed while stopping outbox drain:", err); }
+        }
+        await this.outboxQueue;
+        const workerId = this.outboxWorkerId;
+        this.outboxWorkerId = null;
+        if (workerId && prisma?.board_events?.updateMany)
+        {
+            try
+            {
+                await prisma.board_events.updateMany({
+                    where: { claimedBy: workerId, published: false },
+                    data: { claimedBy: null, claimExpiresAt: null }
+                });
+            } catch (err)
+            {
+                console.error(`[Broadcaster] Failed to release outbox leases for ${workerId}:`, err);
+            }
+        }
+    }
+
+    private async claimPendingEvents(workerId: string, boardId: string | undefined, limit: number, excludedBoardIds: string[]): Promise<ClaimedOutboxEvent[]>
+    {
+        return prisma.$transaction(async (tx) => tx.$queryRaw<ClaimedOutboxEvent[]>`
+            WITH eligible AS (
+                SELECT event."id"
+                FROM "board_events" AS event
+                WHERE event."published" = false
+                  AND (event."claimExpiresAt" IS NULL OR event."claimExpiresAt" < NOW())
+                  AND (${boardId ?? null}::text IS NULL OR event."boardId" = ${boardId ?? null})
+                  AND NOT (event."boardId" = ANY(${excludedBoardIds}::text[]))
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM "board_events" AS earlier
+                      WHERE earlier."boardId" = event."boardId"
+                        AND earlier."published" = false
+                        AND earlier."sequence" < event."sequence"
+                  )
+                ORDER BY event."createdAt", event."boardId", event."sequence"
+                LIMIT ${limit}
+                FOR UPDATE SKIP LOCKED
+            )
+            UPDATE "board_events" AS event
+            SET "claimedBy" = ${workerId},
+                "claimExpiresAt" = NOW() + (${this.outboxLeaseMs} * INTERVAL '1 millisecond')
+            FROM eligible
+            WHERE event."id" = eligible."id"
+            RETURNING event."id", event."boardId", event."sequence", event."eventType", event."payload"
+        `);
+    }
+
+    private async drainOutboxSerialized(workerId: string, boardId: string | undefined, limit: number): Promise<string[]>
+    {
+        const previous = this.outboxQueue;
+        let release!: () => void;
+        this.outboxQueue = new Promise<void>(resolve => { release = resolve; });
+        await previous;
+        const drain = this.drainOutbox(workerId, boardId, limit);
+        this.outboxDrain = drain;
+        try { return await drain; }
+        finally
+        {
+            if (this.outboxDrain === drain) this.outboxDrain = null;
+            release();
+        }
+    }
+
+    private async drainOutbox(workerId: string, boardId?: string, limit = 50): Promise<string[]>
+    {
+        const publishedIds: string[] = [];
+        const excludedBoardIds: string[] = [];
+        let claimedCount = 0;
+        while (claimedCount < Math.max(1, limit))
+        {
+            const events = await this.claimPendingEvents(workerId, boardId, Math.max(1, limit - claimedCount), excludedBoardIds) ?? [];
+            if (events.length === 0) break;
+            claimedCount += events.length;
+            const deliveredIds = await Promise.all(events.map(async evt =>
+            {
+                try
+                {
+                    const delivered = await this.broadcast(evt.boardId, { type: evt.eventType, payload: evt.payload }, {
+                        eventId: evt.id,
+                        sequence: evt.sequence,
+                        skipRecording: true
+                    });
+                    if (delivered) return evt.id;
+                } catch (err)
+                {
+                    console.error(`[Broadcaster] Failed to deliver outbox event ${evt.id}:`, err);
+                }
+                await prisma.board_events.updateMany({
+                    where: { id: evt.id, claimedBy: workerId, published: false },
+                    data: { claimedBy: null, claimExpiresAt: null }
+                });
+                excludedBoardIds.push(evt.boardId);
+                return null;
+            }));
+            publishedIds.push(...deliveredIds.filter((id): id is string => id !== null));
+        }
+        return publishedIds;
     }
 
     public async executeWithOutbox<R>(
         boardId: string,
-        event: { type: string; payload: unknown },
+        eventOrResolver: OutboxEventResolver,
         operation: (tx: any) => Promise<R>
-    ): Promise<{ result: R; eventId: string; sequence: bigint; published: boolean }>
+    ): Promise<{ result: R; events: Array<{ id: string; sequence: bigint }>; eventId?: string; sequence?: bigint; published: boolean }>
     {
         const rawBoardId = cleanBoardId(boardId);
         if (!rawBoardId) throw new Error("Invalid board ID for outbox transaction");
 
-        const { opResult, recordedEvent } = await prisma.$transaction(async (tx) =>
+        const transactionResult = await prisma.$transaction(async (tx) =>
         {
             const opResult = await operation(tx);
-            const recordedEvent = await this.recordBoardEvent(rawBoardId, event.type, event.payload, {
-                tx,
-                published: false,
-                throwOnError: true
-            });
-            if (!recordedEvent)
+            const resolved = typeof eventOrResolver === "function" ? eventOrResolver(opResult) : eventOrResolver;
+            const eventList = resolved == null ? [] : Array.isArray(resolved) ? resolved : [resolved];
+            const records = [];
+            for (const evt of eventList)
             {
-                throw new Error(`Failed to record outbox event for board ${rawBoardId}`);
+                const recorded = await this.recordBoardEvent(rawBoardId, evt.type, evt.payload, {
+                    tx,
+                    published: false,
+                    throwOnError: true
+                });
+                if (!recorded) throw new Error(`Failed to record outbox event for board ${rawBoardId}`);
+                records.push(recorded);
             }
-            return { opResult, recordedEvent };
+            return { opResult, events: records };
         });
+        const { opResult, events } = transactionResult as {
+            opResult: R;
+            events: Array<{ id: string; sequence: bigint }>;
+        };
 
-        const published = await this.broadcast(rawBoardId, {
-            type: event.type,
-            payload: event.payload
-        }, {
-            eventId: recordedEvent.id,
-            sequence: recordedEvent.sequence
-        });
-
+        const publishedIds = events.length === 0 ? [] : await this.drainOutboxSerialized(
+            this.outboxWorkerId ?? `mutation-${randomUUID()}`,
+            rawBoardId,
+            Math.max(50, events.length)
+        );
+        const published = events.length === 0 || events.every(evt => publishedIds.includes(evt.id));
         return {
             result: opResult,
-            eventId: recordedEvent.id,
-            sequence: recordedEvent.sequence,
+            events,
+            eventId: events[0]?.id,
+            sequence: events[0]?.sequence,
             published
         };
     }
@@ -371,42 +389,20 @@ export class WebSocketBroadcaster extends EventEmitter
             payloadStr = JSON.stringify(eventObj);
         }
 
-        let eventId: string | undefined = options?.eventId ?? (eventObj as any).eventId;
-        let sequence: string | undefined = options?.sequence !== undefined ? options.sequence.toString() : (eventObj as any).sequence;
+        let eventId: string | undefined = options?.eventId ?? eventObj.eventId;
+        let sequence: string | undefined = options?.sequence !== undefined ? options.sequence.toString() : eventObj.sequence;
 
-        // Persist event into board_events outbox table if not a system/ping heartbeat and not pre-recorded
-        if (eventObj.type !== "ping" && eventObj.type !== "pong" && eventObj.type !== "board:deleted" && !options?.skipRecording)
+        if (eventId)
         {
-            if (!eventId || sequence === undefined)
-            {
-                try
-                {
-                    const recorded = await this.recordBoardEvent(boardId, eventObj.type, eventObj.payload, {
-                        tx: options?.tx,
-                        published: false,
-                        throwOnError: Boolean(options?.throwOnError || options?.tx)
-                    });
-                    if (recorded)
-                    {
-                        eventId = recorded.id;
-                        sequence = recorded.sequence.toString();
-                        (eventObj as any).sequence = sequence;
-                        (eventObj as any).eventId = eventId;
-                        payloadStr = JSON.stringify(eventObj);
-                    } else if (options?.throwOnError)
-                    {
-                        throw new Error(`Failed to persist outbox event for board ${boardId} (${eventObj.type})`);
-                    }
-                } catch (err)
-                {
-                    if (options?.throwOnError || options?.tx) throw err;
-                }
-            } else
-            {
-                (eventObj as any).sequence = sequence;
-                (eventObj as any).eventId = eventId;
-                payloadStr = JSON.stringify(eventObj);
-            }
+            eventObj.eventId = eventId;
+        }
+        if (sequence !== undefined)
+        {
+            eventObj.sequence = sequence;
+        }
+        if (eventId || sequence !== undefined)
+        {
+            payloadStr = JSON.stringify(eventObj);
         }
 
         // Always emit on local EventEmitter for in-process listeners
@@ -419,35 +415,27 @@ export class WebSocketBroadcaster extends EventEmitter
 
         let transportSuccess = false;
 
-        // If Bun.serve instance is available (same process / dual-server pattern)
-        if (this.server && typeof this.server.publish === "function")
+        // The backend and WebSocket server run as separate processes.
+        try
         {
-            this.server.publish(topic, payloadStr);
-            transportSuccess = true;
-        } else
-        {
-            // Fallback: If running in separate processes (Express on 3000 and Bun.serve on 3001)
-            try
+            const endpoint = `${(process.env.WS_INTERNAL_URL || `http://127.0.0.1:${this.wsPort}`).replace(/\/$/, "")}/internal/broadcast`;
+            const internalSecret = process.env.INTERNAL_BROADCAST_SECRET || process.env.jwt_key || process.env.JWT_SECRET || "";
+            const headers: Record<string, string> = { "Content-Type": "application/json" };
+            if (internalSecret)
             {
-                const endpoint = `http://127.0.0.1:${this.wsPort}/internal/broadcast`;
-                const internalSecret = process.env.INTERNAL_BROADCAST_SECRET || process.env.jwt_key || process.env.JWT_SECRET || "";
-                const headers: Record<string, string> = { "Content-Type": "application/json" };
-                if (internalSecret)
-                {
-                    headers["x-internal-secret"] = internalSecret;
-                }
-
-                const res = await fetch(endpoint, {
-                    method: "POST",
-                    headers,
-                    body: JSON.stringify({ boardId, event: eventObj }),
-                    signal: AbortSignal.timeout(1000)
-                });
-                transportSuccess = res.ok;
-            } catch
-            {
-                transportSuccess = false;
+                headers["x-internal-secret"] = internalSecret;
             }
+
+            const res = await fetch(endpoint, {
+                method: "POST",
+                headers,
+                body: JSON.stringify({ boardId, event: eventObj }),
+                signal: AbortSignal.timeout(1000)
+            });
+            transportSuccess = res.ok;
+        } catch
+        {
+            transportSuccess = false;
         }
 
         // Only mark event published AFTER successful transport!
@@ -468,24 +456,7 @@ export class WebSocketBroadcaster extends EventEmitter
 
         this.emit("evictUser", { userId, orgId, boardIds });
 
-        if (this.evictionHandler)
-        {
-            try
-            {
-                await this.evictionHandler({
-                    userId,
-                    orgId,
-                    boardIds,
-                    reason: "FORBIDDEN_REVOKED: Organization membership terminated"
-                });
-                return true;
-            } catch
-            {
-                return false;
-            }
-        }
-
-        const endpoint = `http://127.0.0.1:${this.wsPort}/internal/evict-user`;
+        const endpoint = `${(process.env.WS_INTERNAL_URL || `http://127.0.0.1:${this.wsPort}`).replace(/\/$/, "")}/internal/evict-user`;
         const internalSecret = process.env.INTERNAL_BROADCAST_SECRET || process.env.jwt_key || process.env.JWT_SECRET || "";
         const headers: Record<string, string> = { "Content-Type": "application/json" };
         if (internalSecret) headers["x-internal-secret"] = internalSecret;
