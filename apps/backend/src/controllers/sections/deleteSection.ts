@@ -28,7 +28,8 @@ export async function deleteSection(req: Request, res: Response)
                             members: {
                                 where: {
                                     userId: req.id,
-                                    role: "admin"
+                                    role: "admin",
+                                    accepted: true
                                 }
                             }
                         }
