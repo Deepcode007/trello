@@ -238,10 +238,13 @@ model board_events {
     payload     Json
     published   Boolean   @default(false)
     publishedAt DateTime?
+    claimedBy      String?
+    claimExpiresAt DateTime?
 
     createdAt DateTime @default(now())
 
     @@unique([boardId, sequence])
     @@index([boardId, published])
+    @@index([boardId, published, claimExpiresAt])
     @@index([createdAt])
 }
