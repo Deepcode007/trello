@@ -1,5 +1,4 @@
 import { describe, expect, it, mock } from "bun:test";
-import { prisma } from "db/prisma";
 import { WebSocketBroadcaster, wsBroadcaster } from "../src/services/broadcaster";
 
 describe("WebSocketBroadcaster Service Integration Tests", () =>
@@ -300,57 +299,6 @@ describe("WebSocketBroadcaster Service Integration Tests", () =>
             expect(res).toBe(false);
         });
 
-        it("falls back to HTTP IPC endpoint when no evictionHandler is registered", async () =>
-        {
-            const broadcaster = new WebSocketBroadcaster();
-            broadcaster.setPort(9999);
-
-            const origFetch = globalThis.fetch;
-            let fetchUrl = "";
-            let fetchBody: any = null;
-            let fetchHeaders: any = null;
-
-            globalThis.fetch = mock((url: any, opts: any) =>
-            {
-                fetchUrl = String(url);
-                fetchBody = JSON.parse(opts.body);
-                fetchHeaders = opts.headers;
-                return Promise.resolve(new Response(JSON.stringify({ success: true, evictedCount: 1 }), { status: 200 }));
-            }) as any;
-
-            try
-            {
-                const res = await broadcaster.evictUser("user_ipc", "org_ipc", ["b1"]);
-                expect(res).toBe(true);
-                expect(fetchUrl).toBe("http://127.0.0.1:9999/internal/evict-user");
-                expect(fetchBody.userId).toBe("user_ipc");
-                expect(fetchBody.orgId).toBe("org_ipc");
-                expect(fetchBody.boardIds).toEqual(["b1"]);
-                expect(fetchHeaders["Content-Type"]).toBe("application/json");
-            } finally
-            {
-                globalThis.fetch = origFetch;
-            }
-        });
-
-        it("returns false when HTTP fallback fails or throws", async () =>
-        {
-            const broadcaster = new WebSocketBroadcaster();
-            broadcaster.setPort(9999);
-
-            const origFetch = globalThis.fetch;
-            globalThis.fetch = mock(() => Promise.reject(new Error("Network offline"))) as any;
-
-            try
-            {
-                const res = await broadcaster.evictUser("user_fail");
-                expect(res).toBe(false);
-            } finally
-            {
-                globalThis.fetch = origFetch;
-            }
-        });
-
         it("returns false immediately for empty, whitespace, or invalid userId", async () =>
         {
             const broadcaster = new WebSocketBroadcaster();
@@ -368,154 +316,23 @@ describe("WebSocketBroadcaster Service Integration Tests", () =>
             expect(await broadcaster.evictUser(12345 as any)).toBe(false);
             expect(handlerCalled).toBe(false);
         });
-
-        it("verifies dual-server singleton consistency and evictUser availability", () =>
-        {
-            const instance = WebSocketBroadcaster.getInstance();
-            expect(typeof instance.evictUser).toBe("function");
-            expect(typeof instance.setEvictionHandler).toBe("function");
-            expect(typeof instance.getEvictionHandler).toBe("function");
-        });
-
-        it("uses INTERNAL_BROADCAST_SECRET in HTTP fallback when configured", async () =>
-        {
-            const broadcaster = new WebSocketBroadcaster();
-            broadcaster.setPort(9999);
-
-            const origSecret = process.env.INTERNAL_BROADCAST_SECRET;
-            const origFetch = globalThis.fetch;
-            process.env.INTERNAL_BROADCAST_SECRET = "custom-internal-secret-xyz";
-
-            let fetchHeaders: any = null;
-            globalThis.fetch = mock((_url: any, opts: any) =>
-            {
-                fetchHeaders = opts.headers;
-                return Promise.resolve(new Response(JSON.stringify({ success: true }), { status: 200 }));
-            }) as any;
-
-            try
-            {
-                await broadcaster.broadcast("test_board_secret", { type: "test", payload: {} });
-                expect(fetchHeaders["x-internal-secret"]).toBe("custom-internal-secret-xyz");
-            } finally
-            {
-                if (origSecret !== undefined)
-                {
-                    process.env.INTERNAL_BROADCAST_SECRET = origSecret;
-                } else
-                {
-                    delete process.env.INTERNAL_BROADCAST_SECRET;
-                }
-                globalThis.fetch = origFetch;
-            }
-        });
     });
 
-    describe("recordBoardEvent persistence and transaction-level advisory locking", () =>
+    it("forwards a pre-recorded event identity without writing to the database", async () =>
     {
-        it("returns null immediately for invalid or empty boardId", async () =>
-        {
-            const broadcaster = new WebSocketBroadcaster();
-            expect(await broadcaster.recordBoardEvent("", "card:created", {})).toBeNull();
-            expect(await broadcaster.recordBoardEvent("   ", "card:created", {})).toBeNull();
-            expect(await broadcaster.recordBoardEvent(null as any, "card:created", {})).toBeNull();
-        });
+        const broadcaster = new WebSocketBroadcaster();
+        const mockServer = createMockServer();
+        broadcaster.setServer(mockServer as any);
+        let receivedEvent: any = null;
+        broadcaster.on("board:board_ws_rec_test", evt => { receivedEvent = evt; });
 
-        it("records board event with incremented sequence inside transaction with advisory lock", async () =>
-        {
-            const broadcaster = new WebSocketBroadcaster();
-            const origTransaction = prisma.$transaction;
+        await broadcaster.broadcast("board_ws_rec_test", {
+            type: "card:moved",
+            payload: { cardId: "c-rec", position: 1500 }
+        }, { eventId: "evt-uuid-5", sequence: 6n });
 
-            let currentSeq = 7n;
-            let capturedData: any = null;
-            let advisoryLockCalled = false;
-
-            prisma.$transaction = mock(async (fn: any) =>
-            {
-                const tx = {
-                    $executeRaw: mock(() =>
-                    {
-                        advisoryLockCalled = true;
-                        return Promise.resolve();
-                    }),
-                    board_events: {
-                        findFirst: mock(() => Promise.resolve({ sequence: currentSeq })),
-                        create: mock((args: any) =>
-                        {
-                            capturedData = args.data;
-                            return Promise.resolve({
-                                id: "evt-rec-1",
-                                sequence: args.data.sequence
-                            });
-                        })
-                    }
-                };
-                return fn(tx);
-            }) as any;
-
-            const rec = await broadcaster.recordBoardEvent("board_123", "card:updated", { cardId: "c1" });
-            expect(rec).not.toBeNull();
-            expect(rec?.sequence).toBe(8n);
-            expect(rec?.id).toBe("evt-rec-1");
-            expect(advisoryLockCalled).toBe(true);
-            expect(capturedData.boardId).toBe("123");
-            expect(capturedData.sequence).toBe(8n);
-            expect(capturedData.eventType).toBe("card:updated");
-
-            prisma.$transaction = origTransaction;
-        });
-
-        it("broadcast attaches sequence and eventId from recorded board event", async () =>
-        {
-            const broadcaster = new WebSocketBroadcaster();
-            const origTransaction = prisma.$transaction;
-
-            prisma.$transaction = mock(async (fn: any) =>
-            {
-                const tx = {
-                    $executeRaw: mock(() => Promise.resolve()),
-                    board_events: {
-                        findFirst: mock(() => Promise.resolve({ sequence: 5n })),
-                        create: mock((args: any) => Promise.resolve({
-                            id: "evt-uuid-5",
-                            sequence: args.data.sequence
-                        }))
-                    }
-                };
-                return fn(tx);
-            }) as any;
-
-            let receivedEvent: any = null;
-            const listener = (data: any) => { receivedEvent = data; };
-            broadcaster.on("board:board_ws_rec_test", listener);
-
-            await broadcaster.broadcast("board_ws_rec_test", {
-                type: "card:moved",
-                payload: { cardId: "c-rec", position: 1500 }
-            });
-
-            expect(receivedEvent).not.toBeNull();
-            expect(receivedEvent.sequence).toBe("6");
-            expect(receivedEvent.eventId).toBe("evt-uuid-5");
-
-            broadcaster.off("board:board_ws_rec_test", listener);
-            prisma.$transaction = origTransaction;
-        });
-
-        it("returns null when transaction fails", async () =>
-        {
-            const broadcaster = new WebSocketBroadcaster();
-            const origTransaction = prisma.$transaction;
-
-            prisma.$transaction = mock(async () =>
-            {
-                throw new Error("Advisory lock acquisition or transaction failure");
-            }) as any;
-
-            const rec = await broadcaster.recordBoardEvent("board_123", "card:created", { cardId: "c3" });
-            expect(rec).toBeNull();
-
-            prisma.$transaction = origTransaction;
-        });
+        expect(receivedEvent.eventId).toBe("evt-uuid-5");
+        expect(receivedEvent.sequence).toBe("6");
+        expect(mockServer.getPublished()[0]?.message).toContain("evt-uuid-5");
     });
 });

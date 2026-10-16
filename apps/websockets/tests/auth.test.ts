@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import jwt from "backend/src/helpers/jwt";
+import jwt from "jsonwebtoken";
 import { authenticateRequest, extractToken, parseCookies } from "../src/auth/authUpgrade";
 
 const JWT_SECRET = "super-secret-test-jwt-key";

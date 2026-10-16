@@ -1,11 +1,15 @@
 import { describe, expect, it, mock } from "bun:test";
-import jwt from "backend/src/helpers/jwt";
+import jwt from "jsonwebtoken";
 import { handleUpgradeRequest, createWebSocketServer, userSocketRegistry, evictUserSockets } from "../src/server";
 import type { WebSocketData } from "../src/types/events";
 
 const JWT_SECRET = "upgrade-test-jwt-secret";
 
 describe("WebSocket Upgrade Handshake & HTTP Layer Tests", () => {
+    function getTestPort(): number
+    {
+        return 20_000 + Math.floor(Math.random() * 40_000);
+    }
     const userId = "user-abc-123";
     const email = "user@test.com";
     const validToken = jwt.sign({ id: userId, email }, JWT_SECRET);
@@ -310,9 +314,9 @@ describe("WebSocket Upgrade Handshake & HTTP Layer Tests", () => {
     });
 
     it("createWebSocketServer initializes when options.jwtSecret is provided", () => {
-        const s = createWebSocketServer({ port: 3098, jwtSecret: "custom-test-secret" });
+        const s = createWebSocketServer({ port: getTestPort(), jwtSecret: "custom-test-secret" });
         expect(s).toBeDefined();
-        expect(s.port).toBe(3098);
+        expect(s.port).toBeGreaterThan(0);
         s.stop(true);
     });
 

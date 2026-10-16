@@ -11,6 +11,10 @@ import type { WebSocketData } from "../src/types/events";
 
 describe("WebSocket Heartbeat & Zombie Socket Leaks Tests", () =>
 {
+    function getTestPort(): number
+    {
+        return 20_000 + Math.floor(Math.random() * 40_000);
+    }
     function createMockServer()
     {
         const published: { topic: string; message: string }[] = [];
@@ -247,10 +251,10 @@ describe("WebSocket Heartbeat & Zombie Socket Leaks Tests", () =>
         expect(ws.data.isAlive).toBe(true);
     });
 
-    it("createWebSocketServer registers heartbeat and cancels it on server.stop()", () =>
+    it("createWebSocketServer registers heartbeat and cancels it on server.stop()", async () =>
     {
         const s = createWebSocketServer({
-            port: 3097,
+            port: getTestPort(),
             jwtSecret: "test-heartbeat-secret",
             heartbeatInterval: 50
         });
@@ -258,6 +262,7 @@ describe("WebSocket Heartbeat & Zombie Socket Leaks Tests", () =>
         expect(s).toBeDefined();
         // server.stop() hook should clear the heartbeat timer without throwing
         expect(() => s.stop(true)).not.toThrow();
+        expect(s.port).toBeGreaterThan(0);
     });
 
     it("defensively handles sockets with missing ping/terminate methods without throwing", () =>
