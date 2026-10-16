@@ -28,7 +28,8 @@ export async function addComment(req: Request, res: Response)
             id: true,
             comments: {
                 where: {
-                    id: result2.data.parentId
+                    id: result2.data.parentId,
+                    deletedAt: null
                 }
             },
             board: {
@@ -53,18 +54,12 @@ export async function addComment(req: Request, res: Response)
     if (issue.board.org.members.length === 0) throw new Forbidden("Members Only");
     if (result2.data.parentId && issue.comments.length === 0) throw new Not_Found("Parent comment not found");
 
-    const created = await prisma.comments.create({
-        data: {
-            ...result.data,
-            ...result2.data,
-            userId: req.id
-        }
-    })
-
-    wsBroadcaster.broadcast(issue.board.id, {
+    const { result: created } = await wsBroadcaster.executeWithOutbox(issue.board.id, comment => ({
         type: "comment:created",
-        payload: { comment: created, issueId: result.data.issueId, boardId: issue.board.id }
-    });
+        payload: { comment, issueId: result.data.issueId, boardId: issue.board.id }
+    }), tx => tx.comments.create({
+        data: { ...result.data, ...result2.data, userId: req.id }
+    }));
 
     return res.status(201).json({
         success: true,

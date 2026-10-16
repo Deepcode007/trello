@@ -50,21 +50,17 @@ export async function createChecklist(req: Request, res: Response)
         select: { position: true }
     });
 
-    const checklist = await prisma.checklists.create({
+    const { result: checklist } = await wsBroadcaster.executeWithOutbox(issue.boardId, created => ({
+        type: "checklist:created",
+        payload: { issueId: paramResult.data.issueId, checklist: created }
+    }), tx => tx.checklists.create({
         data: {
             issueId: paramResult.data.issueId,
             title: bodyResult.data.title,
             position: (lastChecklist?.position ?? 0) + 1000
         },
-        include: {
-            items: true
-        }
-    });
-
-    wsBroadcaster.broadcast(issue.boardId, {
-        type: "checklist:created",
-        payload: { issueId: paramResult.data.issueId, checklist }
-    });
+        include: { items: true }
+    }));
 
     return res.status(201).json({
         success: true,
@@ -125,19 +121,17 @@ export async function addChecklistItem(req: Request, res: Response)
         select: { position: true }
     });
 
-    const item = await prisma.checklist_items.create({
+    const { result: item } = await wsBroadcaster.executeWithOutbox(checklist.issue.boardId, created => ({
+        type: "checklist_item:created",
+        payload: { checklistId: paramResult.data.checklistId, item: created }
+    }), tx => tx.checklist_items.create({
         data: {
             checklistId: paramResult.data.checklistId,
             content: bodyResult.data.content,
             dueDate: bodyResult.data.dueDate,
             position: (lastItem?.position ?? 0) + 1000
         }
-    });
-
-    wsBroadcaster.broadcast(checklist.issue.boardId, {
-        type: "checklist_item:created",
-        payload: { checklistId: paramResult.data.checklistId, item }
-    });
+    }));
 
     return res.status(201).json({
         success: true,
@@ -194,15 +188,10 @@ export async function updateChecklistItem(req: Request, res: Response)
     if (!item) throw new Not_Found("Checklist item not found");
     if (item.checklist.issue.board.org.members.length === 0) throw new Forbidden("Admin/Employee access required");
 
-    const updated = await prisma.checklist_items.update({
-        where: { id: paramResult.data.itemId },
-        data: bodyResult.data
-    });
-
-    wsBroadcaster.broadcast(item.checklist.issue.boardId, {
+    const { result: updated } = await wsBroadcaster.executeWithOutbox(item.checklist.issue.boardId, updatedItem => ({
         type: "checklist_item:updated",
-        payload: { itemId: updated.id, checklistId: item.checklistId, item: updated }
-    });
+        payload: { itemId: updatedItem.id, checklistId: item.checklistId, item: updatedItem }
+    }), tx => tx.checklist_items.update({ where: { id: paramResult.data.itemId }, data: bodyResult.data }));
 
     return res.status(200).json({
         success: true,
@@ -249,14 +238,10 @@ export async function deleteChecklist(req: Request, res: Response)
     if (!checklist) throw new Not_Found("Checklist not found");
     if (checklist.issue.board.org.members.length === 0) throw new Forbidden("Admin/Employee access required");
 
-    await prisma.checklists.delete({
-        where: { id: paramResult.data.checklistId }
-    });
-
-    wsBroadcaster.broadcast(checklist.issue.boardId, {
+    await wsBroadcaster.executeWithOutbox(checklist.issue.boardId, {
         type: "checklist:deleted",
         payload: { issueId: checklist.issueId, checklistId: paramResult.data.checklistId }
-    });
+    }, tx => tx.checklists.delete({ where: { id: paramResult.data.checklistId } }));
 
     return res.status(200).json({
         success: true,

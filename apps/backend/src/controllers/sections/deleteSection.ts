@@ -78,53 +78,36 @@ export async function deleteSection(req: Request, res: Response)
         }
     }
 
-    let reassignedIssues: { id: string; position: number }[] = [];
-    let deletedTitle = "";
-
-    await prisma.$transaction(async (tx) =>
+    const { result: deletedSection } = await wsBroadcaster.executeWithOutbox(user.boardId, (outcome: any) => [
+        ...outcome.reassignedIssues.map((issue: { id: string; position: number | null }) => ({
+            type: "card:moved",
+            payload: {
+                cardId: issue.id,
+                sourceList: result.data.sectionId,
+                destList: targetSectionId,
+                position: issue.position ?? 0
+            }
+        })),
+        { type: "list:deleted", payload: { listId: result.data.sectionId } }
+    ], async tx =>
     {
-        if (issueCount > 0 && targetSectionId)
+        const reassignedIssues = issueCount > 0 && targetSectionId
+            ? await tx.issues.findMany({ where: { sectionId: result.data.sectionId }, select: { id: true, position: true } })
+            : [];
+        if (reassignedIssues.length > 0 && targetSectionId)
         {
-            reassignedIssues = await tx.issues.findMany({
-                where: { sectionId: result.data.sectionId },
-                select: { id: true, position: true }
-            });
-
             await tx.issues.updateMany({
                 where: { sectionId: result.data.sectionId },
                 data: { sectionId: targetSectionId }
             });
         }
-
-        const deleted = await tx.sections.delete({
-            where: {
-                id: result.data.sectionId
-            }
-        });
-        deletedTitle = deleted.title;
-    });
-
-    if (targetSectionId && reassignedIssues.length > 0)
-    {
-        for (const issue of reassignedIssues)
-        {
-            wsBroadcaster.broadcastCardMoved(user.boardId, {
-                cardId: issue.id,
-                sourceList: result.data.sectionId,
-                destList: targetSectionId,
-                position: issue.position ?? 0
-            });
-        }
-    }
-
-    wsBroadcaster.broadcast(user.boardId, {
-        type: "list:deleted",
-        payload: { listId: result.data.sectionId }
+        const deleted = await tx.sections.delete({ where: { id: result.data.sectionId } });
+        return { title: deleted.title, reassignedIssues };
     });
 
     const actionText = issueCount > 0
-        ? `deleted section: ${deletedTitle} and reassigned ${issueCount} issues`
-        : `deleted section: ${deletedTitle}`;
+        ? `deleted section: ${deletedSection.title} and reassigned ${issueCount} issues`
+        : `deleted section: ${deletedSection.title}`;
 
     return res.status(200).json({
         success: true,

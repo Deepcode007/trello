@@ -22,6 +22,7 @@ export async function deleteComment(req: Request, res: Response)
         select: {
             id: true,
             createdAt: true,
+            deletedAt: true,
             userId: true,
             parentId: true,
             issue: {
@@ -51,7 +52,7 @@ export async function deleteComment(req: Request, res: Response)
         }
     })
 
-    if (!comment) throw new Not_Found("Comment not found");
+    if (!comment || comment.deletedAt) throw new Not_Found("Comment not found");
     if (comment.issue.board.org.members.length === 0) throw new Forbidden("Members Only");
 
     const isAdmin = comment.issue.board.org.members[0]?.role === "admin";
@@ -62,8 +63,18 @@ export async function deleteComment(req: Request, res: Response)
 
     if (!isAdmin && timeDiff >= oneDayInMs) throw new Forbidden("Comment created more than 1 day ago");
 
-    const deleted = await prisma.$transaction(async (tx) =>
+    const { result: deleted } = await wsBroadcaster.executeWithOutbox(comment.issue.board.id, deletedComment => ({
+        type: "comment:deleted",
+        payload: { commentId: deletedComment.id, issueId: comment.issue.id, boardId: comment.issue.board.id }
+    }), async tx =>
     {
+        const deletedAt = new Date();
+        const update = await tx.comments.updateMany({
+            where: { id: comment.id, deletedAt: null },
+            data: { deletedAt }
+        });
+        if (update.count === 0) throw new Not_Found("Comment not found");
+
         await tx.comments.updateMany({
             where: {
                 parentId: comment.id
@@ -73,19 +84,9 @@ export async function deleteComment(req: Request, res: Response)
             }
         });
 
-        const updated = await tx.comments.update({
-            where: { id: comment.id },
-            data: {
-                deletedAt: new Date()
-            }
-        });
-
+        const updated = await tx.comments.findUnique({ where: { id: comment.id } });
+        if (!updated) throw new Not_Found("Comment not found");
         return updated;
-    });
-
-    wsBroadcaster.broadcast(comment.issue.board.id, {
-        type: "comment:deleted",
-        payload: { commentId: deleted.id, issueId: comment.issue.id, boardId: comment.issue.board.id }
     });
 
     return res.status(200).json({

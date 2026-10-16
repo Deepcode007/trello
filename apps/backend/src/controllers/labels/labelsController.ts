@@ -37,18 +37,12 @@ export async function createLabel(req: Request, res: Response)
     if (!board) throw new Not_Found("Board not found");
     if (board.org.members.length === 0) throw new Forbidden("Admin/Employee access required");
 
-    const label = await prisma.labels.create({
-        data: {
-            boardId: paramResult.data.boardId,
-            name: bodyResult.data.name,
-            color: bodyResult.data.color
-        }
-    });
-
-    wsBroadcaster.broadcast(paramResult.data.boardId, {
+    const { result: label } = await wsBroadcaster.executeWithOutbox(paramResult.data.boardId, created => ({
         type: "label:created",
-        payload: { label }
-    });
+        payload: { label: created }
+    }), tx => tx.labels.create({
+        data: { boardId: paramResult.data.boardId, name: bodyResult.data.name, color: bodyResult.data.color }
+    }));
 
     return res.status(201).json({
         success: true,
@@ -136,7 +130,10 @@ export async function attachLabel(req: Request, res: Response)
     });
     if (!label || label.boardId !== issue.boardId) throw new ValidationError("Label does not belong to this board");
 
-    const assignment = await prisma.issue_labels.upsert({
+    const { result: assignment } = await wsBroadcaster.executeWithOutbox(issue.boardId, {
+        type: "card:label_added",
+        payload: { issueId: paramResult.data.issueId, label }
+    }, tx => tx.issue_labels.upsert({
         where: {
             issueId_labelId: {
                 issueId: paramResult.data.issueId,
@@ -148,12 +145,7 @@ export async function attachLabel(req: Request, res: Response)
             labelId: bodyResult.data.labelId
         },
         update: {}
-    });
-
-    wsBroadcaster.broadcast(issue.boardId, {
-        type: "card:label_added",
-        payload: { issueId: paramResult.data.issueId, label }
-    });
+    }));
 
     return res.status(201).json({
         success: true,
@@ -195,17 +187,15 @@ export async function detachLabel(req: Request, res: Response)
     if (!issue) throw new Not_Found("Issue not found");
     if (issue.board.org.members.length === 0) throw new Forbidden("Admin/Employee access required");
 
-    await prisma.issue_labels.deleteMany({
+    await wsBroadcaster.executeWithOutbox(issue.boardId, {
+        type: "card:label_removed",
+        payload: { issueId: paramResult.data.issueId, labelId: paramResult.data.labelId }
+    }, tx => tx.issue_labels.deleteMany({
         where: {
             issueId: paramResult.data.issueId,
             labelId: paramResult.data.labelId
         }
-    });
-
-    wsBroadcaster.broadcast(issue.boardId, {
-        type: "card:label_removed",
-        payload: { issueId: paramResult.data.issueId, labelId: paramResult.data.labelId }
-    });
+    }));
 
     return res.status(200).json({
         success: true,

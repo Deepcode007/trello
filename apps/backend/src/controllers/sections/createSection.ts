@@ -56,18 +56,12 @@ export async function createSection(req: Request, res: Response)
         position = (lastSection?.position ?? 0) + 1000;
     }
 
-    const section = await prisma.sections.create({
-        data: {
-            title: result2.data.title,
-            boardId: result.data.boardId,
-            position
-        }
-    })
-
-    wsBroadcaster.broadcast(result.data.boardId, {
+    const { result: section } = await wsBroadcaster.executeWithOutbox(result.data.boardId, created => ({
         type: "list:created",
-        payload: { listData: section }
-    });
+        payload: { listData: created }
+    }), tx => tx.sections.create({
+        data: { title: result2.data.title, boardId: result.data.boardId, position }
+    }));
 
     return res.status(201).json({
         success: true,

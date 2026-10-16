@@ -45,17 +45,10 @@ export async function updateBoard(req: Request, res: Response)
     if (!user) throw new Not_Found("Board not found/invalid Board Id");
     if (user.org.members.length == 0) throw new Forbidden("Admin/Employee access only");
 
-    const board = await prisma.boards.update({
-        where: {
-            id: result.data.boardId
-        },
-        data: result2.data
-    })
-
-    wsBroadcaster.broadcast(board.id, {
+    const { result: board } = await wsBroadcaster.executeWithOutbox(result.data.boardId, updated => ({
         type: "board:updated",
-        payload: { boardId: board.id, title: board.title, description: board.description, color: board.color, isArchived: board.isArchived }
-    });
+        payload: { boardId: updated.id, title: updated.title, description: updated.description, color: updated.color, isArchived: updated.isArchived }
+    }), tx => tx.boards.update({ where: { id: result.data.boardId }, data: result2.data }));
 
     return res.status(200).json({
         success: true,

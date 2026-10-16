@@ -16,101 +16,78 @@ export async function deleteUserHandler(req: Request, res: Response)
 
     if (!result.success || !result2.success) throw new ValidationError();
 
-    const org = await prisma.orgs.findUnique({
-        where: {
-            id: result.data.orgId
-        },
-        select: {
-            members: {
-                select: {
-                    userId: true,
-                    role: true,
-                    accepted: true,
-                    user: {
-                        select: {
-                            email: true
-                        }
-                    }
-                }
-            },
-            _count: {
-                select: {
-                    members: {
-                        where: {
-                            role: "admin",
-                            accepted: true
-                        }
-                    }
-                }
-            }
-        }
-    })
-
-    if (!org) throw new Not_Found("Org not found");
-
-    let admin = org.members.find(x => (x.userId == req.id && x.role == "admin" && x.accepted !== false));
-    let user_found = org.members.find(x => x.user.email === result2.data.email);
-
-    if (!user_found) throw new Not_Found("User not a member");
-
-    const isPending = user_found.accepted === false;
-
-    if (isPending)
+    const { userId, orgBoards } = await prisma.$transaction(async tx =>
     {
-        if (!admin) throw new Forbidden("Admin access required");
-    }
-    else
-    {
-        if (user_found.userId == req.id) admin = user_found;
-
-        if (!admin) throw new Forbidden("Admin access required");
-
-        // self leaving admin or removing an admin (allow if more admins exist)
-        if (user_found.role == "admin" && org._count.members <= 1)
+        if (typeof tx.$queryRaw === "function")
         {
-            throw new Forbidden("No more admins left");
+            await tx.$queryRaw`WITH advisory_lock AS MATERIALIZED (
+                SELECT pg_advisory_xact_lock(hashtext(${result.data.orgId}))
+            )
+            SELECT 1::int AS locked FROM advisory_lock`;
         }
-    }
 
-    await prisma.membership.delete({
-        where: {
-            userId_orgId: {
-                userId: user_found.userId,
-                orgId: result.data.orgId
+        const org = await tx.orgs.findUnique({
+            where: { id: result.data.orgId },
+            select: {
+                members: {
+                    select: { userId: true, role: true, accepted: true, user: { select: { email: true } } }
+                },
+                _count: { select: { members: { where: { role: "admin", accepted: true } } } }
+            }
+        });
+        if (!org) throw new Not_Found("Org not found");
+
+        let admin = org.members.find(x => x.userId === req.id && x.role === "admin" && x.accepted !== false);
+        const userFound = org.members.find(x => x.user.email === result2.data.email);
+        if (!userFound) throw new Not_Found("User not a member");
+
+        if (userFound.accepted === false)
+        {
+            if (!admin) throw new Forbidden("Admin access required");
+        }
+        else
+        {
+            if (userFound.userId === req.id) admin = userFound;
+            if (!admin) throw new Forbidden("Admin access required");
+            if (userFound.role === "admin" && org._count.members <= 1)
+            {
+                throw new Forbidden("No more admins left");
             }
         }
-    })
 
-    // Layer 1: Query all boards in the org and broadcast member eviction to each board topic
-    const orgBoards = await prisma.boards.findMany({
-        where: { orgId: result.data.orgId },
-        select: { id: true }
+        const orgBoards = await tx.boards.findMany({
+            where: { orgId: result.data.orgId },
+            select: { id: true }
+        });
+        await tx.membership.delete({
+            where: { userId_orgId: { userId: userFound.userId, orgId: result.data.orgId } }
+        });
+
+        for (const board of orgBoards)
+        {
+            const record = await wsBroadcaster.recordBoardEvent(board.id, "board:member_evicted", {
+                userId: userFound.userId,
+                orgId: result.data.orgId,
+                boardId: board.id
+            }, { tx, throwOnError: true });
+            if (!record) throw new Error(`Failed to record member eviction for board ${board.id}`);
+        }
+
+        return { userId: userFound.userId, orgBoards };
     });
 
     const boardIds = orgBoards.map(b => b.id);
-
-    await Promise.all(
-        orgBoards.map(b =>
-            wsBroadcaster.broadcast(b.id, {
-                type: "board:member_evicted",
-                payload: {
-                    userId: user_found.userId,
-                    orgId: result.data.orgId,
-                    boardId: b.id
-                }
-            })
-        )
-    );
+    await Promise.all(boardIds.map(boardId => wsBroadcaster.retryPendingEvents(boardId)));
 
     // Layer 2: Forcibly terminate evicted user's active WebSocket connections for this organization
     try
     {
         if (typeof wsBroadcaster.evictUser === "function")
         {
-            const evicted = await wsBroadcaster.evictUser(user_found.userId, result.data.orgId, boardIds);
+            const evicted = await wsBroadcaster.evictUser(userId, result.data.orgId, boardIds);
             if (!evicted)
             {
-                console.warn(`[removeUser] Warning: WebSocket eviction was not acknowledged for user ${user_found.userId} in org ${result.data.orgId}`);
+                console.warn(`[removeUser] Warning: WebSocket eviction was not acknowledged for user ${userId} in org ${result.data.orgId}`);
             }
         }
     } catch (err)

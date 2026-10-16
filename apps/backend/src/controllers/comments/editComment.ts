@@ -26,6 +26,7 @@ export async function editComment(req: Request, res: Response)
         select: {
             id: true,
             createdAt: true,
+            deletedAt: true,
             userId: true,
             issue: {
                 select: {
@@ -49,7 +50,7 @@ export async function editComment(req: Request, res: Response)
         }
     })
 
-    if (!comment) throw new Not_Found("Comment not found");
+    if (!comment || comment.deletedAt) throw new Not_Found("Comment not found");
     if (comment.issue.board.org.members.length === 0) throw new Forbidden("Members Only");
     if (comment.userId !== req.id) throw new Forbidden("Author Only");
 
@@ -58,16 +59,20 @@ export async function editComment(req: Request, res: Response)
 
     if (timeDiff >= oneDayInMs) throw new Forbidden("Comment created more than 1 day ago");
 
-    const updated = await prisma.comments.update({
-        where: {
-            id: result.data.commentId
-        },
-        data: result2.data
-    })
-
-    wsBroadcaster.broadcast(comment.issue.board.id, {
+    const { result: updated } = await wsBroadcaster.executeWithOutbox(comment.issue.board.id, updatedComment => ({
         type: "comment:updated",
-        payload: { comment: updated, commentId: updated.id, boardId: comment.issue.board.id }
+        payload: { comment: updatedComment, commentId: updatedComment.id, boardId: comment.issue.board.id }
+    }), async tx =>
+    {
+        const update = await tx.comments.updateMany({
+            where: { id: result.data.commentId, deletedAt: null },
+            data: result2.data
+        });
+        if (update.count === 0) throw new Not_Found("Comment not found");
+
+        const updatedComment = await tx.comments.findUnique({ where: { id: result.data.commentId } });
+        if (!updatedComment) throw new Not_Found("Comment not found");
+        return updatedComment;
     });
 
     return res.status(200).json({

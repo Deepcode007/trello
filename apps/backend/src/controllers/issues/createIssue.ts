@@ -70,15 +70,17 @@ export async function createIssue(req: Request, res: Response)
         position = (lastIssue?.position ?? 0) + 1000;
     }
 
-    const issue = await prisma.issues.create({
-        data: {
-            ...result2.data,
-            ...result.data,
-            position
-        }
-    })
-
-    wsBroadcaster.broadcastCardCreated(result2.data.boardId, issue);
+    const { result: issue } = await wsBroadcaster.executeWithOutbox(
+        result2.data.boardId,
+        created => ({ type: "card:created", payload: { cardData: created } }),
+        tx => tx.issues.create({
+            data: {
+                ...result2.data,
+                ...result.data,
+                position
+            }
+        })
+    );
 
     return res.status(201).json({
         success: true,

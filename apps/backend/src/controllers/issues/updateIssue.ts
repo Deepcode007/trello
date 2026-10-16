@@ -94,13 +94,6 @@ export async function updateIssue(req: Request, res: Response)
     if (result2.data.startDate !== undefined) updateData.startDate = result2.data.startDate;
     if (result2.data.isArchived !== undefined) updateData.isArchived = result2.data.isArchived;
 
-    const updated = await prisma.issues.update({
-        where: {
-            id: result.data.issueId
-        },
-        data: updateData
-    })
-
     const reqPath = req.originalUrl || req.path || req.url || "";
     const isMove = result2.data.position !== undefined ||
         (targetSectionId !== undefined && targetSectionId !== issue.sectionId) ||
@@ -114,28 +107,36 @@ export async function updateIssue(req: Request, res: Response)
         result2.data.startDate !== undefined ||
         result2.data.isArchived !== undefined;
 
-    if (isMove)
-    {
-        wsBroadcaster.broadcastCardMoved(issue.boardId, {
-            cardId: updated.id,
-            sourceList: issue.sectionId,
-            destList: targetSectionId ?? issue.sectionId,
-            position: updated.position ?? result2.data.position ?? issue.position ?? 0
-        });
-    }
+    const editUpdates: Record<string, unknown> = {};
+    if (result2.data.title !== undefined) editUpdates.title = result2.data.title;
+    if (result2.data.gh_url !== undefined) editUpdates.gh_url = result2.data.gh_url;
+    if (result2.data.description !== undefined) editUpdates.description = result2.data.description;
+    if (result2.data.priority !== undefined) editUpdates.priority = result2.data.priority;
+    if (result2.data.dueDate !== undefined) editUpdates.dueDate = result2.data.dueDate;
+    if (result2.data.startDate !== undefined) editUpdates.startDate = result2.data.startDate;
+    if (result2.data.isArchived !== undefined) editUpdates.isArchived = result2.data.isArchived;
 
-    if (isEdit)
+    const { result: updated } = await wsBroadcaster.executeWithOutbox(issue.boardId, updatedIssue =>
     {
-        const editUpdates: Record<string, unknown> = {};
-        if (result2.data.title !== undefined) editUpdates.title = result2.data.title;
-        if (result2.data.gh_url !== undefined) editUpdates.gh_url = result2.data.gh_url;
-        if (result2.data.description !== undefined) editUpdates.description = result2.data.description;
-        if (result2.data.priority !== undefined) editUpdates.priority = result2.data.priority;
-        if (result2.data.dueDate !== undefined) editUpdates.dueDate = result2.data.dueDate;
-        if (result2.data.startDate !== undefined) editUpdates.startDate = result2.data.startDate;
-        if (result2.data.isArchived !== undefined) editUpdates.isArchived = result2.data.isArchived;
-        wsBroadcaster.broadcastCardUpdated(issue.boardId, updated.id, editUpdates);
-    }
+        const events = [];
+        if (isMove)
+        {
+            events.push({
+                type: "card:moved",
+                payload: {
+                    cardId: updatedIssue.id,
+                    sourceList: issue.sectionId,
+                    destList: targetSectionId ?? issue.sectionId,
+                    position: updatedIssue.position ?? result2.data.position ?? issue.position ?? 0
+                }
+            });
+        }
+        if (isEdit)
+        {
+            events.push({ type: "card:updated", payload: { cardId: updatedIssue.id, updates: editUpdates } });
+        }
+        return events;
+    }, tx => tx.issues.update({ where: { id: result.data.issueId }, data: updateData }));
 
     return res.status(200).json({
         success: true,

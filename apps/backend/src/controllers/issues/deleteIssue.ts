@@ -45,16 +45,14 @@ export async function deleteIssue(req: Request, res: Response)
     if (!issue) throw new Not_Found("Issue not found");
     if (issue.board.org.members.length === 0) throw new Forbidden("Admin/Employee only");
 
-    const deleted = await prisma.issues.delete({
-        where: {
-            id: result.data.issueId
-        }
-    })
-
-    wsBroadcaster.broadcastCardDeleted(issue.boardId, deleted.id);
+    const { result: deleted } = await wsBroadcaster.executeWithOutbox(
+        issue.boardId,
+        deletedIssue => ({ type: "card:deleted", payload: { cardId: deletedIssue.id } }),
+        tx => tx.issues.delete({ where: { id: result.data.issueId } })
+    );
 
     return res.status(200).json({
         success: true,
-        data: `issue: "${deleted.title}" deleted`
+        data: `issue: "${(deleted as any).title}" deleted`
     })
 }

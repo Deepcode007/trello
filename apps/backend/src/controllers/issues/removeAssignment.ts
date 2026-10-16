@@ -61,16 +61,7 @@ export async function removeAssignment(req: Request, res: Response)
     if (issue.board.org.members.length === 0) throw new Forbidden("Admin/Employee only");
     if (issue.issueMappings.length === 0) throw new Not_Found("User/email not found");
 
-    await prisma.issue_mapping.delete({
-        where: {
-            userId_issueId: {
-                userId: issue.issueMappings[0]!.userId,
-                issueId: result.data.issueId
-            }
-        }
-    })
-
-    wsBroadcaster.broadcast(issue.board.id, {
+    await wsBroadcaster.executeWithOutbox(issue.board.id, {
         type: "card:member_unassigned",
         payload: {
             issueId: result.data.issueId,
@@ -78,7 +69,9 @@ export async function removeAssignment(req: Request, res: Response)
             email: result2.data.email,
             boardId: issue.board.id
         }
-    });
+    }, tx => tx.issue_mapping.delete({
+        where: { userId_issueId: { userId: issue.issueMappings[0]!.userId, issueId: result.data.issueId } }
+    }));
 
     return res.status(200).json({
         success: true,

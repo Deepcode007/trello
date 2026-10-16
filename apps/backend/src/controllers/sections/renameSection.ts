@@ -31,6 +31,7 @@ export async function renameSection(req: Request, res: Response)
         },
         select: {
             title: true,
+            boardId: true,
             board: {
                 select: {
                     org: {
@@ -61,24 +62,22 @@ export async function renameSection(req: Request, res: Response)
     if (result2.data.wipLimit !== undefined) updateData.wipLimit = result2.data.wipLimit;
     if (result2.data.isArchived !== undefined) updateData.isArchived = result2.data.isArchived;
 
-    const section = await prisma.sections.update({
-        where: {
-            id: result.data.sectionId
-        },
-        data: updateData
-    });
-
-    if (pos !== undefined)
+    const { result: section } = await wsBroadcaster.executeWithOutbox(user.boardId, updatedSection =>
     {
-        wsBroadcaster.broadcastListReordered(section.boardId, section.id, pos);
-    }
-    if (result2.data.title !== undefined || result2.data.wipLimit !== undefined || result2.data.isArchived !== undefined)
-    {
-        wsBroadcaster.broadcast(section.boardId, {
-            type: "list:updated",
-            payload: { listId: section.id, title: section.title, wipLimit: section.wipLimit, isArchived: section.isArchived }
-        });
-    }
+        const events = [];
+        if (pos !== undefined)
+        {
+            events.push({ type: "list:reordered", payload: { listId: updatedSection.id, newPosition: pos } });
+        }
+        if (result2.data.title !== undefined || result2.data.wipLimit !== undefined || result2.data.isArchived !== undefined)
+        {
+            events.push({
+                type: "list:updated",
+                payload: { listId: updatedSection.id, title: updatedSection.title, wipLimit: updatedSection.wipLimit, isArchived: updatedSection.isArchived }
+            });
+        }
+        return events;
+    }, tx => tx.sections.update({ where: { id: result.data.sectionId }, data: updateData }));
 
     return res.status(200).json({
         success: true,

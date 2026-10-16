@@ -16,64 +16,43 @@ export async function updateRoleHandler(req: Request, res: Response)
 
     if (!result.success || !result2.success) throw new ValidationError();
 
-    const org = await prisma.orgs.findUnique({
-        where: {
-            id: result.data.orgId
-        },
-        select: {
-            _count: {
-                select: {
-                    members: {
-                        where: { role: "admin", accepted: true }
-                    }
-                }
-            },
-            members: {
-                where: {
-                    accepted: true
-                },
-                select: {
-                    userId: true,
-                    role: true,
-                    user: {
-                        select: {
-                            email: true
-                        }
-                    }
+    await prisma.$transaction(async tx =>
+    {
+        if (typeof tx.$queryRaw === "function")
+        {
+            await tx.$queryRaw`WITH advisory_lock AS MATERIALIZED (
+                SELECT pg_advisory_xact_lock(hashtext(${result.data.orgId}))
+            )
+            SELECT 1::int AS locked FROM advisory_lock`;
+        }
+
+        const org = await tx.orgs.findUnique({
+            where: { id: result.data.orgId },
+            select: {
+                _count: { select: { members: { where: { role: "admin", accepted: true } } } },
+                members: {
+                    where: { accepted: true },
+                    select: { userId: true, role: true, user: { select: { email: true } } }
                 }
             }
+        });
+        if (!org) throw new Not_Found("Org not found");
+
+        const isRequesterAdmin = org.members.some(m => m.userId === req.id && m.role === "admin");
+        if (!isRequesterAdmin) throw new Forbidden("Admin access required");
+
+        const targetMember = org.members.find(m => m.user.email === result2.data.email);
+        if (!targetMember) throw new Not_Found("User not a member");
+        if (targetMember.role === result2.data.role) throw new Duplicate(`User already ${targetMember.role}`);
+        if (targetMember.role === "admin" && result2.data.role !== "admin" && org._count.members <= 1)
+        {
+            throw new Forbidden("Cannot demote the last remaining admin");
         }
-    });
 
-    if (!org) throw new Not_Found("Org not found");
-
-    const isRequesterAdmin = org.members.some(m => m.userId === req.id && m.role === "admin");
-    if (!isRequesterAdmin) throw new Forbidden("Admin access required");
-
-    const targetMember = org.members.find(m => m.user.email === result2.data.email);
-    if (!targetMember) throw new Not_Found("User not a member");
-
-    if (targetMember.role === result2.data.role)
-    {
-        throw new Duplicate(`User already ${targetMember.role}`);
-    }
-
-    // Guard against demoting the last active administrator
-    if (targetMember.role === "admin" && result2.data.role !== "admin" && org._count.members <= 1)
-    {
-        throw new Forbidden("Cannot demote the last remaining admin");
-    }
-
-    await prisma.membership.update({
-        where: {
-            userId_orgId: {
-                userId: targetMember.userId,
-                orgId: result.data.orgId
-            }
-        },
-        data: {
-            role: result2.data.role
-        }
+        await tx.membership.update({
+            where: { userId_orgId: { userId: targetMember.userId, orgId: result.data.orgId } },
+            data: { role: result2.data.role }
+        });
     });
 
     return res.status(201).json({

@@ -93,18 +93,14 @@ export async function assignIssue(req: Request, res: Response)
         issueId: result.data.issueId
     }))
 
-    await prisma.issue_mapping.createMany({
-        data: mapping
-    })
-
-    wsBroadcaster.broadcast(issue.board.id, {
+    await wsBroadcaster.executeWithOutbox(issue.board.id, {
         type: "card:member_assigned",
         payload: {
             issueId: result.data.issueId,
             assignedUsers: entriesToCreate.map(v => ({ userId: v.userId, email: v.user.email })),
             boardId: issue.board.id
         }
-    });
+    }, tx => tx.issue_mapping.createMany({ data: mapping }));
 
     return res.status(200).json({
         success: true,
