@@ -238,6 +238,34 @@ describe("Backend Broadcaster Singleton and Event-Emitter Integration Tests", ()
             }
         });
 
+        it("retries evictUser on transient network failure and succeeds if a retry succeeds", async () =>
+        {
+            const broadcaster = new WebSocketBroadcaster();
+            broadcaster.setPort(9999);
+
+            const origFetch = globalThis.fetch;
+            let attempts = 0;
+            globalThis.fetch = (() =>
+            {
+                attempts++;
+                if (attempts === 1)
+                {
+                    return Promise.reject(new Error("Transient connection error"));
+                }
+                return Promise.resolve(new Response(JSON.stringify({ success: true, evictedCount: 1 }), { status: 200 }));
+            }) as any;
+
+            try
+            {
+                const ok = await broadcaster.evictUser("user_retry", "org_1", ["b1"], 2);
+                expect(ok).toBe(true);
+                expect(attempts).toBe(2);
+            } finally
+            {
+                globalThis.fetch = origFetch;
+            }
+        });
+
         it("returns false immediately for empty, whitespace, or invalid userId", async () =>
         {
             const broadcaster = new WebSocketBroadcaster();

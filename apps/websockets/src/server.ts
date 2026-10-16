@@ -12,6 +12,105 @@ import
 
 export type BoardAccessChecker = (userId: string, boardId: string) => Promise<boolean> | boolean;
 
+// 1. User -> Set of Org IDs they belong to (O(1) access check)
+export const userOrgMembership = new Map<string, Set<string>>();
+
+// 2. Org ID -> Set of User IDs currently connected (reverse index for fast O(1) org-scoped lookups)
+export const orgMembers = new Map<string, Set<string>>();
+
+// 3. Board ID -> Org ID mapping (normalized with cleanBoardId; eliminates prisma.boards.findMany queries during eviction)
+export const boardOrgMap = new Map<string, string>();
+
+export function recordUserMembership(userId: string, orgId: string, boardId?: string): void
+{
+    const cleanUid = userId?.trim();
+    const cleanOid = orgId?.trim();
+    if (!cleanUid || !cleanOid) return;
+
+    let orgSet = userOrgMembership.get(cleanUid);
+    if (!orgSet)
+    {
+        orgSet = new Set();
+        userOrgMembership.set(cleanUid, orgSet);
+    }
+    orgSet.add(cleanOid);
+
+    let userSet = orgMembers.get(cleanOid);
+    if (!userSet)
+    {
+        userSet = new Set();
+        orgMembers.set(cleanOid, userSet);
+    }
+    userSet.add(cleanUid);
+
+    if (boardId)
+    {
+        const cleanBid = cleanBoardId(boardId);
+        if (cleanBid)
+        {
+            boardOrgMap.set(cleanBid, cleanOid);
+        }
+    }
+}
+
+export function revokeUserMembership(userId: string, orgId: string): void
+{
+    const cleanUid = userId?.trim();
+    const cleanOid = orgId?.trim();
+    if (!cleanUid || !cleanOid) return;
+
+    const orgSet = userOrgMembership.get(cleanUid);
+    if (orgSet)
+    {
+        orgSet.delete(cleanOid);
+        if (orgSet.size === 0)
+        {
+            userOrgMembership.delete(cleanUid);
+        }
+    }
+
+    const userSet = orgMembers.get(cleanOid);
+    if (userSet)
+    {
+        userSet.delete(cleanUid);
+        if (userSet.size === 0)
+        {
+            orgMembers.delete(cleanOid);
+        }
+    }
+}
+
+export function cleanupUserMembership(userId: string): void
+{
+    const cleanUid = userId?.trim();
+    if (!cleanUid) return;
+
+    const orgSet = userOrgMembership.get(cleanUid);
+    if (orgSet)
+    {
+        for (const orgId of orgSet)
+        {
+            const userSet = orgMembers.get(orgId);
+            if (userSet)
+            {
+                userSet.delete(cleanUid);
+                if (userSet.size === 0)
+                {
+                    orgMembers.delete(orgId);
+                }
+            }
+        }
+        userOrgMembership.delete(cleanUid);
+    }
+}
+
+export function resetMembershipRegistries(): void
+{
+    userOrgMembership.clear();
+    orgMembers.clear();
+    boardOrgMap.clear();
+}
+
 export async function defaultCheckBoardAccess(userId: string, boardId: string): Promise<boolean>
 {
     const rawId = cleanBoardId(boardId);
@@ -21,6 +120,7 @@ export async function defaultCheckBoardAccess(userId: string, boardId: string): 
         const board = await prisma.boards.findUnique({
             where: { id: rawId },
             select: {
+                orgId: true,
                 org: {
                     select: {
                         members: {
@@ -34,7 +134,12 @@ export async function defaultCheckBoardAccess(userId: string, boardId: string): 
                 }
             }
         });
-        return Boolean(board && board.org.members.length > 0);
+        const hasAccess = Boolean(board && board.org && board.org.members.length > 0);
+        if (hasAccess && board?.orgId)
+        {
+            recordUserMembership(userId, board.orgId, rawId);
+        }
+        return hasAccess;
     } catch
     {
         return false;
@@ -76,7 +181,12 @@ export async function evictUserSockets(
     {
         return 0;
     }
-    const sockets = userSocketRegistry.get(body.userId);
+    const cleanUid = body.userId.trim();
+    if (!cleanUid)
+    {
+        return 0;
+    }
+    const sockets = userSocketRegistry.get(cleanUid);
     let evictedCount = 0;
     if (sockets && sockets.size > 0)
     {
@@ -84,20 +194,48 @@ export async function evictUserSockets(
 
         if (hasOrgScope)
         {
-            let targetBoardIds = Array.isArray(body.boardIds) ? [...body.boardIds] : [];
-            if (targetBoardIds.length === 0 && body.orgId)
+            if (body.orgId)
             {
-                try
-                {
-                    const boards = await prisma.boards.findMany({
-                        where: { orgId: body.orgId },
-                        select: { id: true }
-                    });
-                    targetBoardIds = boards.map(b => b.id);
-                } catch { }
+                revokeUserMembership(cleanUid, body.orgId);
             }
 
+            let targetBoardIds = Array.isArray(body.boardIds) ? [...body.boardIds] : [];
             const targetTopics = new Set(targetBoardIds.map(formatBoardTopic).filter(Boolean));
+
+            // Also match any subscription whose boardOrgMap maps to body.orgId
+            if (body.orgId)
+            {
+                for (const ws of sockets)
+                {
+                    if (!ws?.data?.subscriptions) continue;
+                    for (const topic of ws.data.subscriptions)
+                    {
+                        const bId = cleanBoardId(topic);
+                        if (bId && boardOrgMap.get(bId) === body.orgId)
+                        {
+                            targetTopics.add(formatBoardTopic(bId));
+                        }
+                    }
+                }
+
+                // If targetTopics is still empty, fallback to DB query to find boards
+                if (targetTopics.size === 0)
+                {
+                    try
+                    {
+                        const boards = await prisma.boards.findMany({
+                            where: { orgId: body.orgId },
+                            select: { id: true }
+                        });
+                        for (const b of boards)
+                        {
+                            boardOrgMap.set(b.id, body.orgId);
+                            targetTopics.add(formatBoardTopic(b.id));
+                        }
+                    } catch { }
+                }
+            }
+
             const socketsToRemove: ServerWebSocket<WebSocketData>[] = [];
 
             for (const ws of sockets)
@@ -163,7 +301,8 @@ export async function evictUserSockets(
             }
             if (sockets.size === 0)
             {
-                userSocketRegistry.delete(body.userId);
+                userSocketRegistry.delete(cleanUid);
+                cleanupUserMembership(cleanUid);
             }
         } else
         {
@@ -195,7 +334,8 @@ export async function evictUserSockets(
                 ws.data.subscriptions.clear();
                 try { ws.close(4003, body.reason || "FORBIDDEN_REVOKED: User session terminated"); } catch { }
             }
-            userSocketRegistry.delete(body.userId);
+            userSocketRegistry.delete(cleanUid);
+            cleanupUserMembership(cleanUid);
         }
     }
     return evictedCount;
@@ -442,9 +582,25 @@ export async function handleWebSocketMessage(
             return;
         }
 
-        // Verify user is an accepted member of the board's organization
-        const accessResult = checkAccess(ws.data.userId, boardId);
-        const hasAccess = typeof accessResult === "boolean" ? accessResult : await accessResult;
+        const cleanId = cleanBoardId(boardId);
+
+        // Fast-path: Check in-memory membership cache if boardOrgMap and userOrgMembership exist
+        const cachedOrgId = cleanId ? boardOrgMap.get(cleanId) : undefined;
+        let hasAccess = false;
+        if (cachedOrgId && userOrgMembership.get(ws.data.userId?.trim())?.has(cachedOrgId))
+        {
+            hasAccess = true;
+        } else
+        {
+            // Cold path: verify user via access checker (DB or mock)
+            const accessResult = checkAccess(ws.data.userId, boardId);
+            hasAccess = typeof accessResult === "boolean" ? accessResult : await accessResult;
+            if (hasAccess && cachedOrgId && ws.data.userId)
+            {
+                recordUserMembership(ws.data.userId, cachedOrgId, cleanId);
+            }
+        }
+
         if (!hasAccess)
         {
             ws.send(JSON.stringify({
@@ -566,13 +722,15 @@ export function handleWebSocketClose(
 {
     if (ws?.data?.userId)
     {
-        const set = userSocketRegistry.get(ws.data.userId);
+        const cleanUid = ws.data.userId.trim();
+        const set = userSocketRegistry.get(cleanUid);
         if (set)
         {
             set.delete(ws as unknown as ServerWebSocket<WebSocketData>);
             if (set.size === 0)
             {
-                userSocketRegistry.delete(ws.data.userId);
+                userSocketRegistry.delete(cleanUid);
+                cleanupUserMembership(cleanUid);
             }
         }
     }
@@ -749,11 +907,12 @@ export function createWebSocketServer(options: WebSocketServerOptions = {}): Ser
                 }
                 if (ws.data?.userId)
                 {
-                    let set = userSocketRegistry.get(ws.data.userId);
+                    const cleanUid = ws.data.userId.trim();
+                    let set = userSocketRegistry.get(cleanUid);
                     if (!set)
                     {
                         set = new Set();
-                        userSocketRegistry.set(ws.data.userId, set);
+                        userSocketRegistry.set(cleanUid, set);
                     }
                     set.add(ws);
                 }

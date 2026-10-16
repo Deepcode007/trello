@@ -667,6 +667,41 @@ describe("Controller fixes unit tests", () =>
                 prisma.$transaction = origTransaction;
             }
         });
+
+        it("queries prisma with accepted: true and throws Forbidden when user is not an accepted admin", async () =>
+        {
+            let capturedArgs: any;
+            prisma.sections.findUnique = mock((args: any) =>
+            {
+                capturedArgs = args;
+                return Promise.resolve({
+                    boardId: validBoardId,
+                    board: {
+                        org: {
+                            members: []
+                        }
+                    },
+                    _count: {
+                        issues: 0
+                    }
+                });
+            }) as any;
+
+            const req: any = {
+                id: userId,
+                params: { sectionId: validSectionId },
+                query: {},
+                body: {}
+            };
+            const res = createMockRes();
+
+            await expect(deleteSection(req, res)).rejects.toThrow("Admin access required");
+            expect(capturedArgs.select.board.select.org.select.members.where).toEqual({
+                userId,
+                role: "admin",
+                accepted: true
+            });
+        });
     });
 
     describe("renameSection position persistence", () =>
@@ -1048,6 +1083,67 @@ describe("Controller fixes unit tests", () =>
             prisma.boards.findMany = origBoardsFind;
             wsBroadcaster.evictUser = origEvictUser;
             wsBroadcaster.broadcast = origBroadcast;
+        });
+
+        it("deleteUserHandler awaits all board broadcasts and logs warning if evictUser returns false", async () =>
+        {
+            const origOrgFind = prisma.orgs.findUnique;
+            const origMemberDelete = prisma.membership.delete;
+            const origBoardsFind = prisma.boards.findMany;
+            const origEvictUser = wsBroadcaster.evictUser;
+            const origBroadcast = wsBroadcaster.broadcast;
+            const origWarn = console.warn;
+
+            const targetUserEmail = "member-unack@example.com";
+            const targetUserId = "member-uid-unack";
+
+            prisma.orgs.findUnique = mock(() => Promise.resolve({
+                id: validOrgId,
+                members: [
+                    { userId: userId, role: "admin", user: { email: "admin@example.com" } },
+                    { userId: targetUserId, role: "employee", user: { email: targetUserEmail } }
+                ],
+                _count: { members: 1 }
+            })) as any;
+
+            prisma.membership.delete = mock(() => Promise.resolve({})) as any;
+            prisma.boards.findMany = mock(() => Promise.resolve([{ id: "b-1" }, { id: "b-2" }])) as any;
+
+            const broadcastCalls: string[] = [];
+            wsBroadcaster.broadcast = mock((boardId: string) =>
+            {
+                broadcastCalls.push(boardId);
+                return Promise.resolve(true);
+            }) as any;
+
+            let warnMessage = "";
+            console.warn = mock((msg: string) =>
+            {
+                warnMessage = msg;
+            });
+
+            // evictUser returns false (e.g. unacknowledged)
+            wsBroadcaster.evictUser = mock(() => Promise.resolve(false)) as any;
+
+            const req: any = {
+                id: userId,
+                params: { orgId: validOrgId },
+                body: { email: targetUserEmail }
+            };
+            const res = createMockRes();
+
+            await deleteUserHandler(req, res);
+
+            expect(res.statusCode).toBe(200);
+            expect(broadcastCalls).toEqual(["b-1", "b-2"]);
+            expect(warnMessage).toContain("WebSocket eviction was not acknowledged");
+
+            prisma.orgs.findUnique = origOrgFind;
+            prisma.membership.delete = origMemberDelete;
+            prisma.boards.findMany = origBoardsFind;
+            wsBroadcaster.evictUser = origEvictUser;
+            wsBroadcaster.broadcast = origBroadcast;
+            console.warn = origWarn;
         });
 
         describe("Revoking Pending Invitations in deleteUserHandler", () =>

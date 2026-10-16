@@ -89,24 +89,29 @@ export async function deleteUserHandler(req: Request, res: Response)
 
     const boardIds = orgBoards.map(b => b.id);
 
-    for (const b of orgBoards)
-    {
-        wsBroadcaster.broadcast(b.id, {
-            type: "board:member_evicted",
-            payload: {
-                userId: user_found.userId,
-                orgId: result.data.orgId,
-                boardId: b.id
-            }
-        });
-    }
+    await Promise.all(
+        orgBoards.map(b =>
+            wsBroadcaster.broadcast(b.id, {
+                type: "board:member_evicted",
+                payload: {
+                    userId: user_found.userId,
+                    orgId: result.data.orgId,
+                    boardId: b.id
+                }
+            })
+        )
+    );
 
     // Layer 2: Forcibly terminate evicted user's active WebSocket connections for this organization
     try
     {
         if (typeof wsBroadcaster.evictUser === "function")
         {
-            await wsBroadcaster.evictUser(user_found.userId, result.data.orgId, boardIds);
+            const evicted = await wsBroadcaster.evictUser(user_found.userId, result.data.orgId, boardIds);
+            if (!evicted)
+            {
+                console.warn(`[removeUser] Warning: WebSocket eviction was not acknowledged for user ${user_found.userId} in org ${result.data.orgId}`);
+            }
         }
     } catch (err)
     {
