@@ -11,8 +11,22 @@ export async function getBoardEvents(req: Request, res: Response)
     }).safeParse({ boardId: boardIdParam });
 
     const queryResult = zod.object({
-        sinceSeq: zod.string().optional().transform(val => val ? BigInt(val) : 0n),
-        limit: zod.string().optional().transform(val => val ? Math.min(Math.max(Number(val), 1), 500) : 100)
+        sinceSeq: zod.string().optional().refine(val => {
+            if (val === undefined || val === "") return true;
+            return /^\d+$/.test(val.trim());
+        }, "Invalid sinceSeq").transform(val => {
+            const trimmed = val?.trim();
+            return (trimmed && trimmed !== "") ? BigInt(trimmed) : 0n;
+        }),
+        limit: zod.string().optional().refine(val => {
+            if (val === undefined || val === "") return true;
+            return /^[+-]?\d+$/.test(val.trim());
+        }, "Invalid limit").transform(val => {
+            const trimmed = val?.trim();
+            if (!trimmed || trimmed === "") return 100;
+            const num = Number(trimmed);
+            return Math.min(Math.max(num, 1), 500);
+        })
     }).safeParse(req.query);
 
     if (!paramResult.success || !queryResult.success)

@@ -1,6 +1,8 @@
 import { describe, expect, it, mock, afterEach } from "bun:test";
 import { prisma } from "db/prisma";
 import { getBoardEvents } from "../../src/controllers/board/getEvents";
+import { asyncHandler } from "../../src/helpers/asyncHandler";
+import { ValidationError } from "../../src/helpers/errorClass";
 import { createLabel, getLabels, attachLabel, detachLabel } from "../../src/controllers/labels/labelsController";
 import { createChecklist, addChecklistItem, updateChecklistItem, deleteChecklist } from "../../src/controllers/checklists/checklistsController";
 import { updateIssue } from "../../src/controllers/issues/updateIssue";
@@ -313,6 +315,72 @@ describe("Kanban Domain Parity & Event Sourcing Suite", () => {
 
             prisma.boards.findUnique = origBoardFind;
             prisma.board_events.findMany = origEventsFind;
+        });
+
+        it("getBoardEvents throws ValidationError on invalid sinceSeq query parameter", async () => {
+            const req: any = {
+                id: adminUserId,
+                params: { boardId: validBoardId },
+                query: { sinceSeq: "abc" }
+            };
+            const res = createMockRes();
+
+            await expect(getBoardEvents(req, res)).rejects.toThrow(ValidationError);
+        });
+
+        it("getBoardEvents throws ValidationError on negative sinceSeq query parameter", async () => {
+            const req: any = {
+                id: adminUserId,
+                params: { boardId: validBoardId },
+                query: { sinceSeq: "-5" }
+            };
+            const res = createMockRes();
+
+            await expect(getBoardEvents(req, res)).rejects.toThrow(ValidationError);
+        });
+
+        it("getBoardEvents throws ValidationError on invalid limit query parameter", async () => {
+            const req: any = {
+                id: adminUserId,
+                params: { boardId: validBoardId },
+                query: { limit: "abc" }
+            };
+            const res = createMockRes();
+
+            await expect(getBoardEvents(req, res)).rejects.toThrow(ValidationError);
+        });
+
+        it("getBoardEvents throws ValidationError on non-integer limit query parameter", async () => {
+            const req: any = {
+                id: adminUserId,
+                params: { boardId: validBoardId },
+                query: { limit: "1.5" }
+            };
+            const res = createMockRes();
+
+            await expect(getBoardEvents(req, res)).rejects.toThrow(ValidationError);
+        });
+
+        it("asyncHandler wraps getBoardEvents and returns 400 on invalid query values instead of 500", async () => {
+            const reqSinceSeq: any = {
+                id: adminUserId,
+                params: { boardId: validBoardId },
+                query: { sinceSeq: "abc" }
+            };
+            const resSinceSeq = createMockRes();
+            await asyncHandler(getBoardEvents)(reqSinceSeq, resSinceSeq);
+            expect(resSinceSeq.statusCode).toBe(400);
+            expect(resSinceSeq.body.success).toBe(false);
+
+            const reqLimit: any = {
+                id: adminUserId,
+                params: { boardId: validBoardId },
+                query: { limit: "abc" }
+            };
+            const resLimit = createMockRes();
+            await asyncHandler(getBoardEvents)(reqLimit, resLimit);
+            expect(resLimit.statusCode).toBe(400);
+            expect(resLimit.body.success).toBe(false);
         });
     });
 
