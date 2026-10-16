@@ -14,7 +14,6 @@ import { assignIssue } from "../../src/controllers/issues/assignIssue";
 import { getBoardDetails } from "../../src/controllers/board/getaBoard";
 import { loginHandler } from "../../src/controllers/loginHandler";
 import { wsBroadcaster } from "../../src/services/broadcaster";
-import { WebSocketBroadcaster as WsBroadcaster } from "../../../websockets/src/services/broadcaster";
 import bcrypt from "bcrypt";
 
 describe("Controller fixes unit tests", () =>
@@ -41,6 +40,51 @@ describe("Controller fixes unit tests", () =>
         });
         return res;
     }
+
+    const originalTransaction = prisma.$transaction;
+    const originalExecuteWithOutbox = wsBroadcaster.executeWithOutbox;
+    const originalRetryPendingEvents = wsBroadcaster.retryPendingEvents;
+    beforeEach(() =>
+    {
+        let sequence = 0n;
+        const tx = Object.create(prisma);
+        tx.$queryRaw = mock(() => Promise.resolve([]));
+        tx.board_events = {
+            findFirst: mock(() => Promise.resolve({ sequence })),
+            create: mock((args: any) =>
+            {
+                sequence = args.data.sequence;
+                return Promise.resolve({ id: `test-outbox-${sequence}`, sequence });
+            })
+        };
+        prisma.$transaction = mock(async (callback: any) => callback(tx)) as any;
+        wsBroadcaster.executeWithOutbox = mock(async (boardId: string, eventOrResolver: any, operation: any) =>
+        {
+            const { result, events } = await prisma.$transaction(async (txClient: any) =>
+            {
+                const result = await operation(txClient);
+                const resolved = typeof eventOrResolver === "function" ? eventOrResolver(result) : eventOrResolver;
+                return { result, events: resolved == null ? [] : Array.isArray(resolved) ? resolved : [resolved] };
+            }) as any;
+            for (const event of events)
+            {
+                if (event.type === "card:moved") await wsBroadcaster.broadcastCardMoved(boardId, event.payload);
+                else if (event.type === "card:created") await wsBroadcaster.broadcastCardCreated(boardId, event.payload.cardData);
+                else if (event.type === "card:updated") await wsBroadcaster.broadcastCardUpdated(boardId, event.payload.cardId, event.payload.updates);
+                else if (event.type === "card:deleted") await wsBroadcaster.broadcastCardDeleted(boardId, event.payload.cardId);
+                else if (event.type === "list:reordered") await wsBroadcaster.broadcastListReordered(boardId, event.payload.listId, event.payload.newPosition);
+                else await wsBroadcaster.broadcast(boardId, event);
+            }
+            return { result, events: [], published: true };
+        }) as any;
+        wsBroadcaster.retryPendingEvents = mock(() => Promise.resolve(1)) as any;
+    });
+    afterEach(() =>
+    {
+        prisma.$transaction = originalTransaction;
+        wsBroadcaster.executeWithOutbox = originalExecuteWithOutbox;
+        wsBroadcaster.retryPendingEvents = originalRetryPendingEvents;
+    });
 
     describe("createIssue cross-board validation and position handling", () =>
     {
@@ -931,65 +975,6 @@ describe("Controller fixes unit tests", () =>
             wsBroadcaster.broadcast = origBroadcast;
         });
 
-        it("deleteUserHandler succeeds when wsBroadcaster comes from websockets broadcaster instance in dual-server mode", async () =>
-        {
-            const origOrgFind = prisma.orgs.findUnique;
-            const origMemberDelete = prisma.membership.delete;
-            const origBoardsFind = prisma.boards.findMany;
-            const origEvictUser = wsBroadcaster.evictUser;
-            const origBroadcast = wsBroadcaster.broadcast;
-
-            const targetUserEmail = "dual-server-member@example.com";
-            const targetUserId = "member-uid-dual-1";
-
-            prisma.orgs.findUnique = mock(() => Promise.resolve({
-                id: validOrgId,
-                members: [
-                    { userId: userId, role: "admin", user: { email: "admin@example.com" } },
-                    { userId: targetUserId, role: "employee", user: { email: targetUserEmail } }
-                ],
-                _count: { members: 1 }
-            })) as any;
-
-            prisma.membership.delete = mock(() => Promise.resolve({})) as any;
-            prisma.boards.findMany = mock(() => Promise.resolve([{ id: "board-dual-1" }])) as any;
-
-            // Instantiate WebSocketBroadcaster from websockets app
-            const wsServerBroadcaster = new WsBroadcaster();
-            let evictionHandlerCalled = false;
-            wsServerBroadcaster.setEvictionHandler(async (opts) =>
-            {
-                evictionHandlerCalled = true;
-                expect(opts.userId).toBe(targetUserId);
-                expect(opts.orgId).toBe(validOrgId);
-                expect(opts.boardIds).toEqual(["board-dual-1"]);
-                return 1;
-            });
-
-            // Replicate dual-server singleton behavior: backend uses wsBroadcaster which has evictUser
-            wsBroadcaster.evictUser = wsServerBroadcaster.evictUser.bind(wsServerBroadcaster);
-            wsBroadcaster.broadcast = mock(() => Promise.resolve(true)) as any;
-
-            const req: any = {
-                id: userId,
-                params: { orgId: validOrgId },
-                body: { email: targetUserEmail }
-            };
-            const res = createMockRes();
-
-            await deleteUserHandler(req, res);
-
-            expect(res.statusCode).toBe(200);
-            expect(res.body.success).toBe(true);
-            expect(evictionHandlerCalled).toBe(true);
-
-            prisma.orgs.findUnique = origOrgFind;
-            prisma.membership.delete = origMemberDelete;
-            prisma.boards.findMany = origBoardsFind;
-            wsBroadcaster.evictUser = origEvictUser;
-            wsBroadcaster.broadcast = origBroadcast;
-        });
-
         it("deleteUserHandler succeeds and returns 200 even when wsBroadcaster.evictUser throws an unexpected error", async () =>
         {
             const origOrgFind = prisma.orgs.findUnique;
@@ -1091,7 +1076,7 @@ describe("Controller fixes unit tests", () =>
             const origMemberDelete = prisma.membership.delete;
             const origBoardsFind = prisma.boards.findMany;
             const origEvictUser = wsBroadcaster.evictUser;
-            const origBroadcast = wsBroadcaster.broadcast;
+            const origRetryPending = wsBroadcaster.retryPendingEvents;
             const origWarn = console.warn;
 
             const targetUserEmail = "member-unack@example.com";
@@ -1109,11 +1094,11 @@ describe("Controller fixes unit tests", () =>
             prisma.membership.delete = mock(() => Promise.resolve({})) as any;
             prisma.boards.findMany = mock(() => Promise.resolve([{ id: "b-1" }, { id: "b-2" }])) as any;
 
-            const broadcastCalls: string[] = [];
-            wsBroadcaster.broadcast = mock((boardId: string) =>
+            const retryCalls: string[] = [];
+            wsBroadcaster.retryPendingEvents = mock((boardId: string) =>
             {
-                broadcastCalls.push(boardId);
-                return Promise.resolve(true);
+                retryCalls.push(boardId!);
+                return Promise.resolve(1);
             }) as any;
 
             let warnMessage = "";
@@ -1135,14 +1120,14 @@ describe("Controller fixes unit tests", () =>
             await deleteUserHandler(req, res);
 
             expect(res.statusCode).toBe(200);
-            expect(broadcastCalls).toEqual(["b-1", "b-2"]);
+            expect(retryCalls).toEqual(["b-1", "b-2"]);
             expect(warnMessage).toContain("WebSocket eviction was not acknowledged");
 
             prisma.orgs.findUnique = origOrgFind;
             prisma.membership.delete = origMemberDelete;
             prisma.boards.findMany = origBoardsFind;
             wsBroadcaster.evictUser = origEvictUser;
-            wsBroadcaster.broadcast = origBroadcast;
+            wsBroadcaster.retryPendingEvents = origRetryPending;
             console.warn = origWarn;
         });
 

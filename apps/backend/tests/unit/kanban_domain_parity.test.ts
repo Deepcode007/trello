@@ -1,4 +1,4 @@
-import { describe, expect, it, mock, afterEach } from "bun:test";
+import { describe, expect, it, mock, afterEach, beforeEach } from "bun:test";
 import { prisma } from "db/prisma";
 import { getBoardEvents } from "../../src/controllers/board/getEvents";
 import { asyncHandler } from "../../src/helpers/asyncHandler";
@@ -43,6 +43,40 @@ describe("Kanban Domain Parity & Event Sourcing Suite", () => {
     const origBroadcastUserJoined = wsBroadcaster.broadcastUserJoined;
     const origBroadcastUserLeft = wsBroadcaster.broadcastUserLeft;
     const origEvictUser = wsBroadcaster.evictUser;
+    const origExecuteWithOutbox = wsBroadcaster.executeWithOutbox;
+    const origTransaction = prisma.$transaction;
+    const origFetch = globalThis.fetch;
+
+    beforeEach(() => {
+        let sequence = 0n;
+        const tx = Object.create(prisma);
+        tx.$queryRaw = mock(() => Promise.resolve([]));
+        tx.board_events = {
+            findFirst: mock(() => Promise.resolve({ sequence })),
+            create: mock((args: any) => {
+                sequence = args.data.sequence;
+                return Promise.resolve({ id: `test-event-${sequence}`, sequence });
+            })
+        };
+        prisma.$transaction = mock(async (callback: any) => callback(tx)) as any;
+        globalThis.fetch = mock(async () => new Response(null, { status: 200 })) as unknown as typeof fetch;
+        wsBroadcaster.executeWithOutbox = mock(async (boardId: string, eventOrResolver: any, operation: any) => {
+            const txResult = await prisma.$transaction(async (txClient: any) => {
+                const result = await operation(txClient);
+                const resolved = typeof eventOrResolver === "function" ? eventOrResolver(result) : eventOrResolver;
+                return { result, events: resolved == null ? [] : Array.isArray(resolved) ? resolved : [resolved] };
+            }) as any;
+            for (const event of txResult.events) {
+                if (event.type === "card:moved") await wsBroadcaster.broadcastCardMoved(boardId, event.payload);
+                else if (event.type === "card:created") await wsBroadcaster.broadcastCardCreated(boardId, event.payload.cardData);
+                else if (event.type === "card:updated") await wsBroadcaster.broadcastCardUpdated(boardId, event.payload.cardId, event.payload.updates);
+                else if (event.type === "card:deleted") await wsBroadcaster.broadcastCardDeleted(boardId, event.payload.cardId);
+                else if (event.type === "list:reordered") await wsBroadcaster.broadcastListReordered(boardId, event.payload.listId, event.payload.newPosition);
+                else await wsBroadcaster.broadcast(boardId, event);
+            }
+            return { ...txResult, published: true };
+        }) as any;
+    });
 
     afterEach(() => {
         wsBroadcaster.broadcast = origBroadcast;
@@ -54,6 +88,9 @@ describe("Kanban Domain Parity & Event Sourcing Suite", () => {
         wsBroadcaster.broadcastUserJoined = origBroadcastUserJoined;
         wsBroadcaster.broadcastUserLeft = origBroadcastUserLeft;
         wsBroadcaster.evictUser = origEvictUser;
+        wsBroadcaster.executeWithOutbox = origExecuteWithOutbox;
+        prisma.$transaction = origTransaction;
+        globalThis.fetch = origFetch;
     });
 
     describe("Board Events Catch-up API", () => {
@@ -107,7 +144,7 @@ describe("Kanban Domain Parity & Event Sourcing Suite", () => {
 
             prisma.$transaction = mock(async (fn: any) => {
                 const tx = {
-                    $executeRaw: mock(() => {
+                    $queryRaw: mock(() => {
                         advisoryLockCalled = true;
                         return Promise.resolve();
                     }),
@@ -135,23 +172,7 @@ describe("Kanban Domain Parity & Event Sourcing Suite", () => {
             prisma.$transaction = origTransaction;
         });
 
-        it("broadcasts event and attaches sequence number from recorded event", async () => {
-            const origTransaction = prisma.$transaction;
-
-            prisma.$transaction = mock(async (fn: any) => {
-                const tx = {
-                    $executeRaw: mock(() => Promise.resolve()),
-                    board_events: {
-                        findFirst: mock(() => Promise.resolve({ sequence: 5n })),
-                        create: mock((args: any) => Promise.resolve({
-                            id: "evt-uuid-5",
-                            sequence: args.data.sequence
-                        }))
-                    }
-                };
-                return fn(tx);
-            }) as any;
-
+        it("forwards event ID and sequence from a pre-recorded event", async () => {
             let receivedEvent: any = null;
             const listener = (data: any) => { receivedEvent = data; };
             wsBroadcaster.on(`board:${validBoardId}`, listener);
@@ -159,14 +180,13 @@ describe("Kanban Domain Parity & Event Sourcing Suite", () => {
             await wsBroadcaster.broadcast(validBoardId, {
                 type: "card:moved",
                 payload: { cardId: "c-1", position: 1000 }
-            });
+            }, { eventId: "evt-uuid-5", sequence: 6n, skipRecording: true });
 
             expect(receivedEvent).not.toBeNull();
             expect(receivedEvent.sequence).toBe("6");
             expect(receivedEvent.eventId).toBe("evt-uuid-5");
 
             wsBroadcaster.off(`board:${validBoardId}`, listener);
-            prisma.$transaction = origTransaction;
         });
 
         it("recordBoardEvent returns null when transaction fails", async () => {

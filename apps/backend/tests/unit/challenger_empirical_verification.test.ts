@@ -1,4 +1,4 @@
-import { describe, expect, it, mock, afterEach } from "bun:test";
+import { describe, expect, it, mock, afterEach, beforeEach } from "bun:test";
 import { prisma } from "db/prisma";
 import { getAllBoards } from "../../src/controllers/board/getBoards";
 import { getBoardDetails } from "../../src/controllers/board/getaBoard";
@@ -40,6 +40,35 @@ describe("Empirical Challenger Verification Suite", () =>
         });
         return res;
     }
+
+    const originalTransaction = prisma.$transaction;
+    const originalExecuteWithOutbox = wsBroadcaster.executeWithOutbox;
+    beforeEach(() =>
+    {
+        const tx = Object.create(prisma);
+        tx.$queryRaw = mock(() => Promise.resolve([]));
+        prisma.$transaction = mock(async (callback: any) => callback(tx)) as any;
+        wsBroadcaster.executeWithOutbox = mock(async (boardId: string, eventOrResolver: any, operation: any) =>
+        {
+            const result = await prisma.$transaction(async (txClient: any) =>
+            {
+                const result = await operation(txClient);
+                const resolved = typeof eventOrResolver === "function" ? eventOrResolver(result) : eventOrResolver;
+                return { result, events: resolved == null ? [] : Array.isArray(resolved) ? resolved : [resolved] };
+            }) as any;
+            await Promise.all(result.events.map((event: any, index: number) => wsBroadcaster.broadcast(boardId, event, {
+                skipRecording: true,
+                eventId: `test-event-${index}`,
+                sequence: BigInt(index + 1)
+            })));
+            return { ...result, published: true };
+        }) as any;
+    });
+    afterEach(() =>
+    {
+        prisma.$transaction = originalTransaction;
+        wsBroadcaster.executeWithOutbox = originalExecuteWithOutbox;
+    });
 
     // -------------------------------------------------------------
     // Finding API-01 Verification: Board id in Projections
@@ -251,11 +280,22 @@ describe("Empirical Challenger Verification Suite", () =>
     {
         const origOrgFindUnique = prisma.orgs.findUnique;
         const origMembershipUpdate = prisma.membership.update;
+        const origTransaction = prisma.$transaction;
+
+        beforeEach(() =>
+        {
+            prisma.$transaction = mock(async (callback: any) => callback({
+                $queryRaw: mock(() => Promise.resolve([])),
+                orgs: prisma.orgs,
+                membership: prisma.membership
+            })) as any;
+        });
 
         afterEach(() =>
         {
             prisma.orgs.findUnique = origOrgFindUnique;
             prisma.membership.update = origMembershipUpdate;
+            prisma.$transaction = origTransaction;
         });
 
         it("admin updating their own role succeeds without deadlock when multiple admins exist", async () =>
@@ -295,6 +335,40 @@ describe("Empirical Challenger Verification Suite", () =>
             await updateRoleHandler(req, res);
             expect(res.statusCode).toBe(201);
             expect(updatedUserId).toBe(adminUserId);
+        });
+
+        it("acquires an organization-scoped transaction advisory lock before checking roles", async () =>
+        {
+            prisma.orgs.findUnique = mock(() => Promise.resolve({
+                id: validOrgId,
+                _count: { members: 2 },
+                members: [
+                    { userId: adminUserId, role: "admin", user: { email: "admin@example.com" } },
+                    { userId: "other-admin-id", role: "admin", user: { email: "other@example.com" } }
+                ]
+            })) as any;
+            prisma.membership.update = mock(() => Promise.resolve({ role: "employee" })) as any;
+            let lockSql = "";
+            let lockOrgId = "";
+            prisma.$transaction = mock(async (callback: any) => callback({
+                $queryRaw: mock((strings: TemplateStringsArray, ...values: unknown[]) =>
+                {
+                    lockSql = strings.join("?");
+                    lockOrgId = String(values[0]);
+                    return Promise.resolve([]);
+                }),
+                orgs: prisma.orgs,
+                membership: prisma.membership
+            })) as any;
+
+            await updateRoleHandler({
+                id: adminUserId,
+                params: { orgId: validOrgId },
+                body: { email: "other@example.com", role: "employee" }
+            } as any, createMockRes());
+
+            expect(lockSql).toContain("pg_advisory_xact_lock(hashtext(?))");
+            expect(lockOrgId).toBe(validOrgId);
         });
 
         it("prevents demoting the last remaining admin", async () =>
@@ -459,8 +533,8 @@ describe("Empirical Challenger Verification Suite", () =>
             {
                 return fn({
                     comments: {
-                        updateMany: mock(() => Promise.resolve({ count: 0 })),
-                        update: mock(() => Promise.resolve({ id: validCommentId }))
+                        updateMany: mock((args: any) => Promise.resolve({ count: args.where.id ? 1 : 0 })),
+                        findUnique: mock(() => Promise.resolve({ id: validCommentId, deletedAt: new Date() }))
                     }
                 });
             }) as any;
@@ -483,26 +557,26 @@ describe("Empirical Challenger Verification Suite", () =>
 
         it("editComment: author can edit comment and receives HTTP 200 OK", async () =>
         {
-            const origCommentUpdate = prisma.comments.update;
             const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
-            prisma.comments.findUnique = mock(() => Promise.resolve({
-                id: validCommentId,
-                createdAt: oneHourAgo,
-                userId: normalUserId,
-                issue: {
-                    board: {
-                        id: validBoardId,
-                        org: {
-                            members: [{ role: "employee", userId: normalUserId }]
+            let commentQueryCount = 0;
+            prisma.comments.findUnique = mock(() =>
+            {
+                commentQueryCount++;
+                return Promise.resolve(commentQueryCount === 1
+                    ? {
+                        id: validCommentId,
+                        createdAt: oneHourAgo,
+                        userId: normalUserId,
+                        issue: {
+                            board: {
+                                id: validBoardId,
+                                org: { members: [{ role: "employee", userId: normalUserId }] }
+                            }
                         }
                     }
-                }
-            })) as any;
-
-            prisma.comments.update = mock(() => Promise.resolve({
-                id: validCommentId,
-                description: "Updated description text"
-            })) as any;
+                    : { id: validCommentId, description: "Updated description text" });
+            }) as any;
+            prisma.comments.updateMany = mock(() => Promise.resolve({ count: 1 })) as any;
 
             const origBroadcast = wsBroadcaster.broadcast;
             wsBroadcaster.broadcast = mock(() => Promise.resolve(true)) as any;
@@ -519,8 +593,104 @@ describe("Empirical Challenger Verification Suite", () =>
             expect(res.body.success).toBe(true);
             expect(res.body.data.description).toBe("Updated description text");
 
-            prisma.comments.update = origCommentUpdate;
             wsBroadcaster.broadcast = origBroadcast;
+        });
+
+        it("editComment returns 404 if the comment is deleted after the initial lookup", async () =>
+        {
+            const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+            prisma.comments.findUnique = mock(() => Promise.resolve({
+                id: validCommentId,
+                createdAt: oneHourAgo,
+                deletedAt: null,
+                userId: normalUserId,
+                issue: {
+                    board: {
+                        id: validBoardId,
+                        org: { members: [{ role: "employee", userId: normalUserId }] }
+                    }
+                }
+            })) as any;
+            prisma.comments.updateMany = mock(() => Promise.resolve({ count: 0 })) as any;
+
+            await expect(editComment({
+                id: normalUserId,
+                params: { commentId: validCommentId },
+                body: { description: "Updated" }
+            } as any, createMockRes())).rejects.toThrow("Comment not found");
+        });
+
+        it("deleteComment returns 404 if another request deletes it first", async () =>
+        {
+            prisma.comments.findUnique = mock(() => Promise.resolve({
+                id: validCommentId,
+                createdAt: new Date(),
+                deletedAt: null,
+                userId: normalUserId,
+                parentId: null,
+                issue: {
+                    id: validIssueId,
+                    board: {
+                        id: validBoardId,
+                        org: { members: [{ role: "employee", userId: normalUserId }] }
+                    }
+                }
+            })) as any;
+            prisma.comments.updateMany = mock(() => Promise.resolve({ count: 0 })) as any;
+
+            await expect(deleteComment({
+                id: normalUserId,
+                params: { commentId: validCommentId }
+            } as any, createMockRes())).rejects.toThrow("Comment not found");
+        });
+
+        it("editComment returns 404 for a soft-deleted comment", async () =>
+        {
+            prisma.comments.findUnique = mock(() => Promise.resolve({
+                id: validCommentId,
+                deletedAt: new Date(),
+                createdAt: new Date(),
+                userId: normalUserId
+            })) as any;
+            await expect(editComment({
+                id: normalUserId,
+                params: { commentId: validCommentId },
+                body: { description: "Updated" }
+            } as any, createMockRes())).rejects.toThrow("Comment not found");
+        });
+
+        it("deleteComment returns 404 for a soft-deleted comment", async () =>
+        {
+            prisma.comments.findUnique = mock(() => Promise.resolve({
+                id: validCommentId,
+                deletedAt: new Date(),
+                createdAt: new Date(),
+                userId: normalUserId
+            })) as any;
+            await expect(deleteComment({
+                id: normalUserId,
+                params: { commentId: validCommentId }
+            } as any, createMockRes())).rejects.toThrow("Comment not found");
+        });
+
+        it("addComment excludes deleted comments when validating reply parents", async () =>
+        {
+            let parentQuery: any;
+            prisma.issues.findUnique = mock((args: any) =>
+            {
+                parentQuery = args.select.comments.where;
+                return Promise.resolve({
+                    id: validIssueId,
+                    comments: [],
+                    board: { id: validBoardId, org: { members: [{ userId: normalUserId }] } }
+                });
+            }) as any;
+            await expect(addComment({
+                id: normalUserId,
+                params: { issueId: validIssueId },
+                body: { parentId: validCommentId, description: "Reply" }
+            } as any, createMockRes())).rejects.toThrow("Parent comment not found");
+            expect(parentQuery.deletedAt).toBeNull();
         });
     });
 

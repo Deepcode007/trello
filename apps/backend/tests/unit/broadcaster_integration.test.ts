@@ -158,41 +158,9 @@ describe("Backend Broadcaster Singleton and Event-Emitter Integration Tests", ()
         }
     });
 
-    describe("evictUser and in-memory EvictionHandler", () =>
+    describe("evictUser HTTP IPC endpoint and retry behavior", () =>
     {
-        it("invokes registered evictionHandler in-memory directly", async () =>
-        {
-            const broadcaster = new WebSocketBroadcaster();
-            let calledWith: any = null;
-
-            broadcaster.setEvictionHandler(async (opts) =>
-            {
-                calledWith = opts;
-                return true;
-            });
-
-            expect(broadcaster.getEvictionHandler()).not.toBeNull();
-
-            const ok = await broadcaster.evictUser("user_backend_test", "org_backend_test", ["b1", "b2"]);
-            expect(ok).toBe(true);
-            expect(calledWith.userId).toBe("user_backend_test");
-            expect(calledWith.orgId).toBe("org_backend_test");
-            expect(calledWith.boardIds).toEqual(["b1", "b2"]);
-        });
-
-        it("returns false if evictionHandler throws an error", async () =>
-        {
-            const broadcaster = new WebSocketBroadcaster();
-            broadcaster.setEvictionHandler(() =>
-            {
-                throw new Error("Eviction crash");
-            });
-
-            const ok = await broadcaster.evictUser("user_err");
-            expect(ok).toBe(false);
-        });
-
-        it("falls back to HTTP IPC endpoint when no handler is configured", async () =>
+        it("dispatches eviction request to WebSocket service HTTP IPC endpoint", async () =>
         {
             const broadcaster = new WebSocketBroadcaster();
             broadcaster.setPort(9999);
@@ -220,7 +188,7 @@ describe("Backend Broadcaster Singleton and Event-Emitter Integration Tests", ()
             }
         });
 
-        it("returns false when HTTP fallback fails", async () =>
+        it("returns false when HTTP request fails", async () =>
         {
             const broadcaster = new WebSocketBroadcaster();
             broadcaster.setPort(9999);
@@ -269,19 +237,12 @@ describe("Backend Broadcaster Singleton and Event-Emitter Integration Tests", ()
         it("returns false immediately for empty, whitespace, or invalid userId", async () =>
         {
             const broadcaster = new WebSocketBroadcaster();
-            let handlerCalled = false;
-            broadcaster.setEvictionHandler(() =>
-            {
-                handlerCalled = true;
-                return true;
-            });
 
             expect(await broadcaster.evictUser("")).toBe(false);
             expect(await broadcaster.evictUser("   ")).toBe(false);
             expect(await broadcaster.evictUser(null as any)).toBe(false);
             expect(await broadcaster.evictUser(undefined as any)).toBe(false);
             expect(await broadcaster.evictUser(12345 as any)).toBe(false);
-            expect(handlerCalled).toBe(false);
         });
     });
 });

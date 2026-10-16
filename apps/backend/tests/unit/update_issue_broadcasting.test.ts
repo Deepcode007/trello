@@ -15,6 +15,7 @@ describe("updateIssue move vs edit broadcasting unit tests", () => {
     const origIssueFindUnique = prisma.issues.findUnique;
     const origSectionFindUnique = prisma.sections.findUnique;
     const origIssueUpdate = prisma.issues.update;
+    const origExecuteWithOutbox = wsBroadcaster.executeWithOutbox;
 
     let movedCalls: any[] = [];
     let updatedCalls: any[] = [];
@@ -32,6 +33,17 @@ describe("updateIssue move vs edit broadcasting unit tests", () => {
         wsBroadcaster.broadcastCardUpdated = mock((boardId: string, cardId: string, updates: any) => {
             updatedCalls.push({ boardId, cardId, updates });
             return Promise.resolve(true);
+        }) as any;
+
+        wsBroadcaster.executeWithOutbox = mock(async (boardId: string, eventOrResolver: any, operation: any) => {
+            const result = await operation(prisma);
+            const resolved = typeof eventOrResolver === "function" ? eventOrResolver(result) : eventOrResolver;
+            const events = resolved == null ? [] : Array.isArray(resolved) ? resolved : [resolved];
+            for (const event of events) {
+                if (event.type === "card:moved") await wsBroadcaster.broadcastCardMoved(boardId, event.payload);
+                if (event.type === "card:updated") await wsBroadcaster.broadcastCardUpdated(boardId, event.payload.cardId, event.payload.updates);
+            }
+            return { result, events: [], published: true };
         }) as any;
 
         // Mock Prisma queries
@@ -72,6 +84,7 @@ describe("updateIssue move vs edit broadcasting unit tests", () => {
     afterEach(() => {
         wsBroadcaster.broadcastCardMoved = origBroadcastCardMoved;
         wsBroadcaster.broadcastCardUpdated = origBroadcastCardUpdated;
+        wsBroadcaster.executeWithOutbox = origExecuteWithOutbox;
         prisma.issues.findUnique = origIssueFindUnique;
         prisma.sections.findUnique = origSectionFindUnique;
         prisma.issues.update = origIssueUpdate;
