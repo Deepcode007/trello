@@ -10,7 +10,7 @@ High-performance real-time collaboration engine built on native [Bun WebSockets]
 - **Board Membership Authorization**: Enforces organization-level access control before subscribing sockets to board rooms (`board_<boardId>`).
 - **Real-Time Presence Tracking**: Automatically broadcasts `user:joined` and `user:left` events upon room entry, room exit, and connection termination.
 - **Inter-Process HTTP Bridge**: Secure `/internal/broadcast` endpoint authenticated via `x-internal-secret` allowing backend API processes to publish real-time events to active board rooms.
-- **Dual-Server Execution**: Can run standalone on port 3001 or concurrently with the Express REST API in single-process mode (`START_EXPRESS=true`).
+- **Independent Service**: Runs as a separate process from the Express API and accepts authenticated internal broadcast requests from the backend.
 
 ---
 
@@ -21,15 +21,17 @@ Configure `apps/websockets/.env`:
 ```env
 ws_port="3001"
 jwt_key="your-super-secret-jwt-key"
+INTERNAL_BROADCAST_SECRET="your-internal-service-secret"
 ```
 
 | Variable | Default | Description |
 | :--- | :--- | :--- |
 | `ws_port` / `WS_PORT` | `3001` | Port on which the WebSocket server listens |
 | `jwt_key` / `JWT_SECRET` | Shared secret key for JWT verification and IPC broadcast authentication |
+| `INTERNAL_BROADCAST_SECRET` | Shared backend-to-WebSocket secret; defaults to the JWT secret when omitted |
 
 > [!IMPORTANT]
-> `jwt_key` must match the secret configured in `apps/backend/.env` to ensure valid token decoding and authenticated inter-process broadcasts.
+> `jwt_key` must match between the apps for token validation. `INTERNAL_BROADCAST_SECRET` should also match; if omitted, both services use the JWT secret for internal requests.
 
 ---
 
@@ -98,9 +100,12 @@ Events published to board subscribers (`board_<boardId>`):
 ## 🔌 HTTP Endpoints
 
 - `GET /health` or `GET /api/health`: Health status and port inspection.
-- `POST /internal/broadcast`: Inter-process event dispatch used by the Express backend.
-  - Header: `x-internal-secret: <jwt_key>`
+- `POST /internal/broadcast`: Inter-process event dispatch used by the Express backend to broadcast events to board subscribers.
+  - Header: `x-internal-secret: <INTERNAL_BROADCAST_SECRET>` (falls back to `jwt_key`)
   - Body: `{ "boardId": "<board_uuid>", "event": { "type": "card:created", ... } }`
+- `POST /internal/evict-user`: Inter-process user socket eviction upon member removal or privilege revocation.
+  - Header: `x-internal-secret: <INTERNAL_BROADCAST_SECRET>` (falls back to `jwt_key`)
+  - Body: `{ "userId": "<user_uuid>", "orgId": "<org_uuid>", "boardIds": ["<board_uuid>"] }`
 
 ---
 
@@ -110,6 +115,6 @@ Events published to board subscribers (`board_<boardId>`):
 # Run server with live reloading
 bun run dev
 
-# Run WebSocket test suite (68 tests)
+# Run WebSocket test suite (103 tests)
 bun test
 ```

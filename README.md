@@ -49,13 +49,15 @@ Designed for agile teams and organizations, this platform provides hierarchical 
 
 - **Native Pub/Sub Engine**: Board-scoped rooms (`board_<boardId>`) using Bun's native high-performance WebSocket publish/subscribe.
 - **Ordered Event Sourcing & Advisory Locks**: Outbox event recording (`board_events`) using PostgreSQL transaction-level advisory locks (`pg_advisory_xact_lock`) ensuring strictly sequential, non-colliding event numbering across concurrent workers.
+- **Transactional Outbox & Worker Leases**: Atomic DB mutations and event writes via `executeWithOutbox`. Resilient background outbox worker (`claimedBy`, `claimExpiresAt` leases) ensures safe, at-least-once event delivery across multiple backend instances without duplicate dispatch.
 - **Catch-up Sync API**: Clients can query `/api/boards/:boardId/events?sinceSeq=<sequence>` to sync missing events after reconnecting.
 - **Server-Side Heartbeat & Zombie Pruning**: Recurring ping/pong health checks (default 30s) automatically detect inactive sockets, respond to client heartbeat pings/pongs, and terminate dead zombie connections with presence broadcast updates.
 - **Live Event Broadcasting**: Instant updates for card moves, creation, edits, deletions, checklist changes, labels, and column changes.
 - **Presence Tracking & Targeted Eviction**: Real-time `user:joined` and `user:left` events with automatic connection-drop cleanup and administrative user/session eviction hooks (`/internal/evict-user`).
+- **In-Memory Membership Registry & Fast-Path Eviction**: WebSocket server maintains an in-memory membership cache for zero-latency join verification and fast-path multi-board/org socket eviction without repeated database lookups.
 - **Flexible Authentication**: Handshake-level JWT validation supporting headers, cookies, URL query parameters, and subprotocols.
 - **Timing-Attack Resilient Auth**: Login handler utilizes constant-time dummy bcrypt hashing to prevent user enumeration and timing attacks.
-- **Dual-Server & IPC Architecture**: Supports running in unified single-process mode or separated microservices with HTTP broadcast bridging (`/internal/broadcast`).
+- **Separate Backend and WebSocket Services**: Backend delivers events through the authenticated HTTP bridge (`/internal/broadcast`); the shared `realtime` package holds the event contracts used by both apps.
 
 ### 💬 Threaded Discussions & Comments
 
@@ -81,26 +83,30 @@ trello/
 │   │   │   ├── middlewares/   # JWT authentication & token generation
 │   │   │   ├── models/        # Zod schemas for input validation
 │   │   │   ├── routes/        # Express route definitions (with card & section aliases)
-│   │   │   ├── services/      # WebSocketBroadcaster client service
+│   │   │   ├── services/      # WebSocketBroadcaster & Transactional Outbox Worker
 │   │   │   └── types/         # TypeScript environment and entity typings
-│   │   └── tests/             # Integration & unit test suites (150+ unit tests)
+│   │   └── tests/             # Integration & unit test suites (181+ unit tests)
 │   │
 │   ├── websockets/            # Native Bun WebSocket collaborative server
 │   │   ├── src/
 │   │   │   ├── auth/          # Handshake authentication & token extraction strategies
 │   │   │   ├── server/        # Bun.serve WebSocket server, upgrade handlers, heartbeat & close hooks
-│   │   │   ├── services/      # Broadcaster singleton & IPC handler
+│   │   │   ├── services/      # Broadcaster singleton, in-memory membership cache, & IPC handler
 │   │   │   └── types/         # Client actions, server events, & payload interfaces
-│   │   ├── tests/             # WebSocket test suites (95+ tests across auth, pub/sub, heartbeat, upgrade)
-│   │   └── index.ts           # WebSocket entrypoint & dual-server runner
+│   │   ├── tests/             # WebSocket test suites (103+ tests across auth, pub/sub, heartbeat, upgrade)
+│   │   └── index.ts           # WebSocket entrypoint & HTTP broadcast listener
 │   │
 │   └── frontend/              # Kanban web application interface (in progress)
 │
 ├── packages/
 │   ├── db/                    # Prisma schema, migrations, and PostgreSQL client
-│   │   ├── prisma/            # schema.prisma and migration logs
-│   │   ├── scripts/           # Database utilities (clearDB.ts for test runs)
+│   │   ├── prisma/            # schema.prisma, migration logs, and outbox event leases
+│   │   ├── scripts/           # Database utilities (clearDB.ts, backfillPositions.ts)
 │   │   └── db.ts              # Prisma client instance with PostgreSQL adapter
+│   ├── realtime/              # Shared real-time event definitions, types, and topic helpers
+│   │   ├── src/
+│   │   │   └── index.ts       # BroadcastEvent, payloads, formatBoardTopic, cleanBoardId
+│   │   └── package.json
 │   ├── ui/                    # Shared React component library
 │   ├── eslint-config/         # Monorepo-wide ESLint configurations
 │   └── typescript-config/     # Base and framework-specific tsconfig definitions
@@ -246,6 +252,9 @@ erDiagram
         string eventType
         json payload
         boolean published
+        datetime publishedAt
+        string claimedBy
+        datetime claimExpiresAt
         datetime createdAt
     }
 ```
@@ -324,8 +333,8 @@ When actions occur via REST API or other clients, events are published to the bo
 ### HTTP Endpoints on WebSocket Server
 
 - `GET /health` or `GET /api/health`: Health status and port inspection.
-- `POST /internal/broadcast`: Inter-process broadcast hook used by Express when running in multi-process mode. Authenticated via `x-internal-secret: <jwt_key>` or `INTERNAL_BROADCAST_SECRET`.
-- `POST /internal/evict-user`: Inter-process user socket eviction endpoint used upon member removal or privilege revocation. Authenticated via `x-internal-secret: <jwt_key>`.
+- `POST /internal/broadcast`: Inter-process broadcast hook used by Express backend to dispatch real-time events to connected board subscribers. Authenticated via `x-internal-secret: <INTERNAL_BROADCAST_SECRET>` (falls back to `jwt_key`).
+- `POST /internal/evict-user`: Inter-process user socket eviction endpoint used upon member removal or privilege revocation to close active connections or unsubscribe from revoked boards. Authenticated via `x-internal-secret: <INTERNAL_BROADCAST_SECRET>` (falls back to `jwt_key`).
 
 ---
 
@@ -451,6 +460,12 @@ DATABASE_URL="postgresql://<user>:<password>@localhost:5432/<database_name>"
 port="3000"
 jwt_key="your-super-secret-jwt-key"
 ws_port="3001"
+WS_INTERNAL_URL="http://127.0.0.1:3001"
+INTERNAL_BROADCAST_SECRET="your-internal-service-secret"
+
+# Optional Outbox worker configuration
+OUTBOX_RETRY_INTERVAL_MS="5000"
+OUTBOX_LEASE_MS="30000"
 ```
 
 **`apps/websockets/.env`**:
@@ -458,10 +473,11 @@ ws_port="3001"
 ```env
 ws_port="3001"
 jwt_key="your-super-secret-jwt-key"
+INTERNAL_BROADCAST_SECRET="your-internal-service-secret"
 ```
 
 > [!IMPORTANT]
-> The `jwt_key` in `apps/backend/.env` and `apps/websockets/.env` must match so that tokens generated by the REST API can be validated by the WebSocket server and inter-process broadcast calls can be authenticated.
+> The `jwt_key` values must match for WebSocket JWT validation. Set the same `INTERNAL_BROADCAST_SECRET` in both apps for internal HTTP calls; when omitted, the JWT secret is used as a compatibility fallback. `WS_INTERNAL_URL` should point from backend to the WebSocket service.
 
 ### 3. Setup the Database
 
@@ -475,30 +491,42 @@ bun --filter db exec prisma generate
 
 ### 4. Run Development Servers
 
-#### Option A: Run All Services via Turborepo (Recommended)
+Start the two apps as **separate processes**. They can run on the same machine initially; backend sends broadcasts to the WebSocket service over HTTP.
+
+For local development, from the repo root:
 
 ```bash
-bun run dev
-```
-
-#### Option B: Run Specific Services Separately
-
-```bash
-# Start backend API (Port 3000)
 bun run dev --filter=backend
-
-# Start WebSocket server (Port 3001)
 bun run dev --filter=websockets
 ```
 
-#### Option C: Dual-Server Single-Process Mode
+Run each command in its own terminal. Configure both apps with matching `jwt_key` values. Set the same `INTERNAL_BROADCAST_SECRET` in both, and set the backend’s `WS_INTERNAL_URL` to the WebSocket service address, for example `http://127.0.0.1:3001`. The internal secret can fall back to the JWT secret, but configuring it separately is preferable.
 
-Run both Express API and native WebSockets within the same Bun process for shared in-memory broadcasting:
+*(Alternatively, you can start both services concurrently from the repo root with `bun run dev`)*
 
-```bash
-cd apps/websockets
-START_EXPRESS=true bun run index.ts
-```
+---
+
+## 🔄 How events flow
+
+1. A client makes a change through the backend API.
+2. The backend writes the change and its event to the database outbox.
+3. The backend publisher sends the event to `WS_INTERNAL_URL/internal/broadcast`.
+4. The WebSocket service publishes it to connected clients subscribed to that board.
+5. If delivery fails, the outbox leaves the event pending for retry.
+
+This works whether the two processes are on the same machine or separate machines; the URL and network access are the difference.
+
+---
+
+## 📈 Scaling
+
+**Initially:** run one backend and one WebSocket process. They may share a machine, but the HTTP boundary stays the same.
+
+**More backend capacity:** run multiple backend processes against the shared database. The outbox lease mechanism coordinates event delivery so workers can claim pending events safely. Ensure all backends use the same WebSocket URL and internal secret.
+
+**More WebSocket capacity:** the current HTTP endpoint reaches one WebSocket service target. Before running multiple WebSocket replicas, add a broker such as Redis Pub/Sub so an event reaches every replica; otherwise clients connected to other replicas can miss updates. Keep the backend publishing through the same service boundary, then have the WebSocket instances consume the broker and publish to their own local clients.
+
+One caveat: user eviction also currently uses the single WebSocket HTTP target, so with multiple WebSocket replicas that operation will need broker fan-out too.
 
 ---
 
@@ -510,10 +538,10 @@ The repository features comprehensive automated testing using Bun's native test 
 # 1. Run all tests across the monorepo
 bun run test
 
-# 2. Run WebSocket unit and integration tests (97 tests)
+# 2. Run WebSocket unit and integration tests (103 tests)
 bun test --cwd apps/websockets
 
-# 3. Run Backend unit tests (helpers, middleware, Zod schemas, parity, & broadcast dispatches)
+# 3. Run Backend unit tests (helpers, middleware, Zod schemas, parity, & broadcast dispatches) (181 tests)
 bun test apps/backend/tests/unit
 
 # 4. Run Full Backend integration tests (requires PostgreSQL test database)
@@ -542,12 +570,15 @@ bun run check-types
 - [x] Threaded nested comment tree with edit time limits (200 OK responses)
 - [x] Native WebSocket server with board pub/sub rooms
 - [x] Event sourcing with advisory locks (`pg_advisory_xact_lock`) and catch-up event sync
+- [x] Transactional outbox pattern with worker leasing (`claimedBy`, `claimExpiresAt`) and guaranteed event publishing
+- [x] Shared real-time event contract package (`packages/realtime`)
+- [x] In-memory membership registry & fast-path join/eviction handling
 - [x] Server-side heartbeat intervals and automatic zombie socket cleanup
 - [x] Multi-strategy handshake authentication (Headers, Cookies, Query, Subprotocol)
 - [x] Real-time presence tracking (`user:joined`, `user:left`) and targeted member eviction
 - [x] Automatic WebSocket disconnect cleanup
 - [x] Inter-process event synchronization (`WebSocketBroadcaster` with HTTP bridge)
-- [x] Comprehensive test suites (97 WebSocket tests + 156 Backend unit tests)
+- [x] Comprehensive test suites (103 WebSocket tests + 181 Backend unit tests = 284 unit/contract tests)
 - [ ] Next.js / React frontend UI with drag-and-drop Kanban board (`dnd-kit`)
 - [ ] GitHub webhook integration for automated card syncing
 - [ ] Card activity log and audit history
