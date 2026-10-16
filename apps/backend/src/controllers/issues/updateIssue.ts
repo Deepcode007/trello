@@ -38,6 +38,7 @@ export async function updateIssue(req: Request, res: Response)
         select: {
             boardId: true,
             sectionId: true,
+            position: true,
             board: {
                 select: {
                     org: {
@@ -119,7 +120,7 @@ export async function updateIssue(req: Request, res: Response)
             cardId: updated.id,
             sourceList: issue.sectionId,
             destList: targetSectionId ?? issue.sectionId,
-            position: result2.data.position ?? 0
+            position: updated.position ?? result2.data.position ?? issue.position ?? 0
         });
     }
 

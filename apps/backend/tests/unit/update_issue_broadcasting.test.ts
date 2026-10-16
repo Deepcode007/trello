@@ -39,6 +39,7 @@ describe("updateIssue move vs edit broadcasting unit tests", () => {
             return Promise.resolve({
                 boardId: validBoardId,
                 sectionId: validSourceSectionId,
+                position: 100,
                 board: {
                     org: {
                         members: [
@@ -62,7 +63,8 @@ describe("updateIssue move vs edit broadcasting unit tests", () => {
                 boardId: validBoardId,
                 sectionId: args.data.sectionId ?? validSourceSectionId,
                 title: args.data.title ?? "Old Title",
-                gh_url: args.data.gh_url ?? "https://github.com/old"
+                gh_url: args.data.gh_url ?? "https://github.com/old",
+                position: args.data.position ?? 100
             });
         }) as any;
     });
@@ -122,6 +124,33 @@ describe("updateIssue move vs edit broadcasting unit tests", () => {
         expect(movedCalls[0].payload.cardId).toBe(validIssueId);
         expect(movedCalls[0].payload.sourceList).toBe(validSourceSectionId);
         expect(movedCalls[0].payload.destList).toBe(validDestSectionId);
+        expect(movedCalls[0].payload.position).toBe(100);
+
+        expect(updatedCalls.length).toBe(0);
+    });
+
+    it("pure move (cross-section move without position) preserves stored position in emitted card:moved event", async () => {
+        prisma.issues.update = mock((args: any) => {
+            return Promise.resolve({
+                id: args.where.id,
+                boardId: validBoardId,
+                sectionId: args.data.sectionId ?? validSourceSectionId,
+                title: "Old Title",
+                gh_url: "https://github.com/old",
+                position: 1250
+            });
+        }) as any;
+
+        const { req, res } = createMockReqRes({ sectionId: validDestSectionId });
+        await updateIssue(req, res);
+
+        expect(res.getStatus()).toBe(200);
+        expect(movedCalls.length).toBe(1);
+        expect(movedCalls[0].boardId).toBe(validBoardId);
+        expect(movedCalls[0].payload.cardId).toBe(validIssueId);
+        expect(movedCalls[0].payload.sourceList).toBe(validSourceSectionId);
+        expect(movedCalls[0].payload.destList).toBe(validDestSectionId);
+        expect(movedCalls[0].payload.position).toBe(1250);
 
         expect(updatedCalls.length).toBe(0);
     });
