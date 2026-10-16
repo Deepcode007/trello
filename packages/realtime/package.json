@@ -1,0 +1,14 @@
+{
+  "name": "realtime",
+  "type": "module",
+  "private": true,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "check-types": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  }
+}
