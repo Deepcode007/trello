@@ -128,7 +128,8 @@ export async function attachLabel(req: Request, res: Response)
     const label = await prisma.labels.findUnique({
         where: { id: bodyResult.data.labelId }
     });
-    if (!label || label.boardId !== issue.boardId) throw new ValidationError("Label does not belong to this board");
+    if (!label) throw new Not_Found("Label not found");
+    if (label.boardId !== issue.boardId) throw new ValidationError("Label does not belong to this board");
 
     const { result: assignment } = await wsBroadcaster.executeWithOutbox(issue.boardId, {
         type: "card:label_added",
@@ -144,7 +145,10 @@ export async function attachLabel(req: Request, res: Response)
             issueId: paramResult.data.issueId,
             labelId: bodyResult.data.labelId
         },
-        update: {}
+        update: {},
+        include: {
+            label: true
+        }
     }));
 
     return res.status(201).json({
