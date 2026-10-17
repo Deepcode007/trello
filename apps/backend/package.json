@@ -5,7 +5,7 @@
   "private": true,
   "scripts": {
     "dev": "bun --watch index.ts",
-    "test": "bun test",
+    "test": "bun test --isolate",
     "check-types": "tsc --noEmit"
   },
   "devDependencies": {
