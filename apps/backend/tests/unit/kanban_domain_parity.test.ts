@@ -8,7 +8,6 @@ import { createChecklist, addChecklistItem, updateChecklistItem, deleteChecklist
 import { updateIssue } from "../../src/controllers/issues/updateIssue";
 import { renameSection } from "../../src/controllers/sections/renameSection";
 import { wsBroadcaster } from "../../src/services/broadcaster";
-import { backfillPositions } from "../../../../packages/db/scripts/backfillPositions";
 
 describe("Kanban Domain Parity & Event Sourcing Suite", () => {
     const validBoardId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
@@ -1533,40 +1532,6 @@ describe("Kanban Domain Parity & Event Sourcing Suite", () => {
             const res = createMockRes();
 
             await expect(renameSection(req, res)).rejects.toThrow("Admin/Employee access required");
-        });
-    });
-
-    describe("Backfill Positions Script", () => {
-        it("backfillPositions executes raw SQL migrations and returns success true", async () => {
-            const origExecuteRaw = prisma.$executeRawUnsafe;
-            let executionCalls: string[] = [];
-
-            prisma.$executeRawUnsafe = mock((query: string) => {
-                executionCalls.push(query);
-                return Promise.resolve(1);
-            }) as any;
-
-            const result = await backfillPositions();
-            expect(result.success).toBe(true);
-            expect(executionCalls.length).toBe(2);
-            expect(executionCalls[0]).toContain("ranked_sections");
-            expect(executionCalls[1]).toContain("ranked_issues");
-
-            prisma.$executeRawUnsafe = origExecuteRaw;
-        });
-
-        it("backfillPositions returns success false with error message when query fails", async () => {
-            const origExecuteRaw = prisma.$executeRawUnsafe;
-
-            prisma.$executeRawUnsafe = mock(() => {
-                return Promise.reject(new Error("Database connection dropped"));
-            }) as any;
-
-            const result = await backfillPositions();
-            expect(result.success).toBe(false);
-            expect(result.error).toContain("Database connection dropped");
-
-            prisma.$executeRawUnsafe = origExecuteRaw;
         });
     });
 });

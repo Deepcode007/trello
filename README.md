@@ -101,7 +101,7 @@ trello/
 ├── packages/
 │   ├── db/                    # Prisma schema, migrations, and PostgreSQL client
 │   │   ├── prisma/            # schema.prisma, migration logs, and outbox event leases
-│   │   ├── scripts/           # Database utilities (clearDB.ts, backfillPositions.ts)
+│   │   ├── scripts/           # Database utilities (clearDB.ts)
 │   │   └── db.ts              # Prisma client instance with PostgreSQL adapter
 │   ├── realtime/              # Shared real-time event definitions, types, and topic helpers
 │   │   ├── src/
