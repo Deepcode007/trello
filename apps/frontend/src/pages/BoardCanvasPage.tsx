@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
   AlertTriangle,
@@ -12,6 +12,8 @@ import { useOrgStore } from "../store/useOrgStore";
 import { useBoardSocket } from "../hooks/useBoardSocket";
 import { useBoardDetailsQuery } from "../hooks/useBoardQueries";
 import { BoardHeader } from "../components/board/BoardHeader";
+import { KanbanCanvas } from "../components/board/KanbanCanvas";
+import { CardDetailModal } from "../components/board/CardDetailModal/CardDetailModal";
 import { Button } from "../components/ui/button";
 import { getBoardErrorMessage } from "../lib/board-api";
 
@@ -20,6 +22,7 @@ export function BoardCanvasPage() {
   const navigate = useNavigate();
   const activeOrgId = useOrgStore(s => s.activeOrgId);
   const setActiveOrgId = useOrgStore(s => s.setActiveOrgId);
+  const [selectedIssueId, setSelectedIssueId] = useState<string | null>(null);
 
   // Sync active organization in store if navigating directly to a board route
   useEffect(() => {
@@ -176,61 +179,21 @@ export function BoardCanvasPage() {
       {/* Board Canvas Header */}
       <BoardHeader board={board} />
 
-      {/* Horizontal Scrollable Canvas Viewport Container */}
-      <main
-        className="flex-1 overflow-x-auto p-6 flex gap-4 min-h-[500px] bg-secondary/10"
-        data-testid="board-canvas-viewport"
-        aria-label="Kanban Canvas"
-      >
-        {board.section && board.section.length > 0 ? (
-          board.section.map(sec => (
-            <section
-              key={sec.id}
-              className="w-72 shrink-0 rounded-xl border bg-card/90 shadow-sm p-4 flex flex-col gap-3"
-              data-testid={`column-${sec.id}`}
-            >
-              <div className="flex items-center justify-between font-semibold text-sm">
-                <span className="truncate">{sec.title}</span>
-                <span className="text-xs text-muted-foreground px-1.5 py-0.5 rounded-full bg-secondary">
-                  {sec.issues?.length ?? 0}
-                </span>
-              </div>
-              <div className="flex-1 flex flex-col gap-2 min-h-[100px]">
-                {sec.issues && sec.issues.length > 0 ? (
-                  sec.issues.map(issue => (
-                    <article
-                      key={issue.id}
-                      className="rounded-lg border bg-background p-3 shadow-xs text-xs font-medium hover:border-primary/40 transition-colors"
-                      data-testid={`card-${issue.id}`}
-                    >
-                      <h4 className="line-clamp-2">{issue.title}</h4>
-                    </article>
-                  ))
-                ) : (
-                  <div className="flex items-center justify-center p-4 border border-dashed rounded-lg text-xs text-muted-foreground/60 italic">
-                    No cards in column
-                  </div>
-                )}
-              </div>
-            </section>
-          ))
-        ) : (
-          <div
-            data-testid="canvas-empty-columns"
-            className="flex flex-col items-center justify-center m-auto text-center p-8 rounded-xl border border-dashed border-border/80 bg-card/40 max-w-md"
-          >
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary mb-3">
-              <Kanban className="h-6 w-6" />
-            </div>
-            <h3 className="text-sm font-semibold text-foreground">
-              Canvas Ready
-            </h3>
-            <p className="mt-1 text-xs text-muted-foreground">
-              This board has no columns yet. Columns, drag-and-drop, and card interactions will be configured in Step 5.
-            </p>
-          </div>
-        )}
-      </main>
+      {/* Modular Kanban Canvas */}
+      <KanbanCanvas
+        board={board}
+        onSelectCard={setSelectedIssueId}
+      />
+
+      {/* Card Detail Modal */}
+      <CardDetailModal
+        issueId={selectedIssueId}
+        open={Boolean(selectedIssueId)}
+        onOpenChange={open => !open && setSelectedIssueId(null)}
+        boardId={board.id}
+        orgId={board.orgId}
+        allSections={board.section || []}
+      />
     </div>
   );
 }
