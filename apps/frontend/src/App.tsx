@@ -21,8 +21,10 @@ import { OrgSwitcher } from "./components/org/OrgSwitcher";
 import { MemberManagementModal } from "./components/org/MemberManagementModal";
 import { PendingInvitesModal } from "./components/org/PendingInvitesModal";
 import { CreateOrgModal } from "./components/org/CreateOrgModal";
+import { BoardList } from "./components/board/BoardList";
 import { LoginPage } from "./pages/LoginPage";
 import { SignupPage } from "./pages/SignupPage";
+import { BoardCanvasPage } from "./pages/BoardCanvasPage";
 import { getSafeRedirect } from "./lib/auth-validation";
 
 const queryClient = new QueryClient({
@@ -348,6 +350,11 @@ function DashboardPage()
                 )}
             </div>
 
+            {/* Organization Boards Section */}
+            {activeOrg && (
+                <BoardList orgId={activeOrg.id} />
+            )}
+
             {/* Dashboard Modals */}
             <CreateOrgModal
                 open={createOrgOpen}
@@ -409,6 +416,16 @@ export function App()
                             <ProtectedRoute>
                                 <AppLayout>
                                     <DashboardPage />
+                                </AppLayout>
+                            </ProtectedRoute>
+                        }
+                    />
+                    <Route
+                        path="/orgs/:orgId/boards/:boardId"
+                        element={
+                            <ProtectedRoute>
+                                <AppLayout>
+                                    <BoardCanvasPage />
                                 </AppLayout>
                             </ProtectedRoute>
                         }

@@ -12,6 +12,9 @@ export interface UseRoleReturn {
   canUpdateRole: boolean;
   canRemoveMember: boolean;
   canCreateBoard: boolean;
+  canEditBoard: boolean;
+  canArchiveBoard: boolean;
+  canDeleteBoard: boolean;
   canEditOrg: boolean;
 }
 
@@ -32,6 +35,7 @@ export function useRole(targetOrgId?: string): UseRoleReturn {
   const isAdmin = role === "admin";
   const isEmployee = role === "employee";
   const isContributor = role === "contributor";
+  const canModifyBoard = isAdmin || isEmployee;
 
   return useMemo(() => ({
     role,
@@ -42,7 +46,10 @@ export function useRole(targetOrgId?: string): UseRoleReturn {
     canInvite: isAdmin,
     canUpdateRole: isAdmin,
     canRemoveMember: isAdmin,
-    canCreateBoard: isAdmin || isEmployee,
+    canCreateBoard: canModifyBoard,
+    canEditBoard: canModifyBoard,
+    canArchiveBoard: canModifyBoard,
+    canDeleteBoard: canModifyBoard,
     canEditOrg: isAdmin
-  }), [role, isAdmin, isEmployee, isContributor]);
+  }), [role, isAdmin, isEmployee, isContributor, canModifyBoard]);
 }

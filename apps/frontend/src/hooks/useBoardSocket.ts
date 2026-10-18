@@ -15,7 +15,7 @@ export function useBoardSocket(boardId?: string) {
   const queryClient = useQueryClient();
   const token = useAuthStore(s => s.token);
   const {
-    setConnected,
+    setConnectionStatus,
     setActiveBoardId,
     addCollaborator,
     removeCollaborator,
@@ -28,6 +28,7 @@ export function useBoardSocket(boardId?: string) {
   const pingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const retryCountRef = useRef(0);
   const lastSeqRef = useRef<string | null>(null);
+  const isMountedRef = useRef(true);
 
   const handleBroadcastEvent = useCallback((event: BroadcastEvent) => {
     if (!event || !event.type) return;
@@ -62,6 +63,12 @@ export function useBoardSocket(boardId?: string) {
       case "board:member_evicted": {
         const payload = event.payload as BoardEvictedPayload;
         alert(payload?.reason || "You have been removed from this board.");
+        window.location.href = "/";
+        break;
+      }
+
+      case "board:deleted": {
+        alert("This board has been deleted.");
         window.location.href = "/";
         break;
       }
@@ -121,14 +128,15 @@ export function useBoardSocket(boardId?: string) {
   }, [queryClient, handleBroadcastEvent]);
 
   const connect = useCallback(() => {
-    if (!boardId || !token) return;
+    if (!isMountedRef.current || !boardId || !token) return;
 
     const wsUrl = `${WS_BASE_URL}?token=${encodeURIComponent(token)}`;
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
 
     ws.onopen = () => {
-      setConnected(true);
+      if (!isMountedRef.current) return;
+      setConnectionStatus("connected");
       setActiveBoardId(boardId);
       retryCountRef.current = 0;
 
@@ -150,6 +158,7 @@ export function useBoardSocket(boardId?: string) {
     };
 
     ws.onmessage = evt => {
+      if (!isMountedRef.current) return;
       try {
         const data = JSON.parse(evt.data);
         if (data.action === "ping") {
@@ -163,30 +172,41 @@ export function useBoardSocket(boardId?: string) {
     };
 
     ws.onclose = () => {
-      setConnected(false);
+      if (!isMountedRef.current) return;
+      setConnectionStatus("disconnected");
       if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
 
       // Exponential backoff reconnect
       const delay = Math.min(1000 * 2 ** retryCountRef.current, 10000);
       retryCountRef.current += 1;
+      setConnectionStatus("reconnecting");
       reconnectTimeoutRef.current = setTimeout(() => {
+        if (!isMountedRef.current) return;
         connect();
       }, delay);
     };
 
     ws.onerror = err => {
+      if (!isMountedRef.current) return;
       console.warn("WebSocket error:", err);
+      setConnectionStatus("disconnected");
       ws.close();
     };
-  }, [boardId, token, setConnected, setActiveBoardId, syncMissedEvents, handleBroadcastEvent]);
+  }, [boardId, token, setConnectionStatus, setActiveBoardId, syncMissedEvents, handleBroadcastEvent]);
 
   useEffect(() => {
+    isMountedRef.current = true;
     connect();
 
     return () => {
+      isMountedRef.current = false;
       if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
       if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
       if (wsRef.current) {
+        wsRef.current.onclose = null;
+        wsRef.current.onerror = null;
+        wsRef.current.onmessage = null;
+        wsRef.current.onopen = null;
         if (wsRef.current.readyState === WebSocket.OPEN && boardId) {
           wsRef.current.send(JSON.stringify({ action: "leave", boardId }));
         }
@@ -199,6 +219,7 @@ export function useBoardSocket(boardId?: string) {
 
   return {
     isConnected: useBoardStore(s => s.connected),
+    connectionStatus: useBoardStore(s => s.connectionStatus),
     collaborators: useBoardStore(s => s.collaborators)
   };
 }
