@@ -7,26 +7,7 @@ import type {
   BroadcastEvent,
   UserJoinedPayload,
   UserLeftPayload,
-  CardMovedPayload,
-  CardCreatedPayload,
-  CardUpdatedPayload,
-  CardDeletedPayload,
-  CardMemberAssignedPayload,
-  CardMemberUnassignedPayload,
-  CardLabelAddedPayload,
-  CardLabelRemovedPayload,
-  ListCreatedPayload,
-  ListUpdatedPayload,
-  ListReorderedPayload,
-  ListDeletedPayload,
-  ChecklistCreatedPayload,
-  ChecklistDeletedPayload,
-  ChecklistItemCreatedPayload,
-  ChecklistItemUpdatedPayload,
   CommentCreatedPayload,
-  CommentUpdatedPayload,
-  CommentDeletedPayload,
-  BoardUpdatedPayload,
   BoardEvictedPayload
 } from "realtime";
 
@@ -47,21 +28,6 @@ export function useBoardSocket(boardId?: string) {
   const pingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const retryCountRef = useRef(0);
   const lastSeqRef = useRef<string | null>(null);
-
-  // Catch-up missed events via REST after socket reconnects
-  const syncMissedEvents = useCallback(async (bId: string, sinceSeq: string) => {
-    try {
-      const res = await api.get(`/api/boards/${bId}/events?sinceSeq=${sinceSeq}`);
-      if (res.data?.success && Array.isArray(res.data.data)) {
-        for (const evt of res.data.data) {
-          handleBroadcastEvent(evt);
-        }
-      }
-    } catch (err) {
-      console.warn("Failed to catch up missed events, invalidating board cache:", err);
-      queryClient.invalidateQueries({ queryKey: ["board", bId] });
-    }
-  }, [queryClient]);
 
   const handleBroadcastEvent = useCallback((event: BroadcastEvent) => {
     if (!event || !event.type) return;
@@ -138,6 +104,21 @@ export function useBoardSocket(boardId?: string) {
         break;
     }
   }, [boardId, queryClient, addCollaborator, removeCollaborator, setLastSeenSequence]);
+
+  // Catch-up missed events via REST after socket reconnects
+  const syncMissedEvents = useCallback(async (bId: string, sinceSeq: string) => {
+    try {
+      const res = await api.get(`/api/boards/${bId}/events?sinceSeq=${sinceSeq}`);
+      if (res.data?.success && Array.isArray(res.data.data)) {
+        for (const evt of res.data.data) {
+          handleBroadcastEvent(evt);
+        }
+      }
+    } catch (err) {
+      console.warn("Failed to catch up missed events, invalidating board cache:", err);
+      queryClient.invalidateQueries({ queryKey: ["board", bId] });
+    }
+  }, [queryClient, handleBroadcastEvent]);
 
   const connect = useCallback(() => {
     if (!boardId || !token) return;
