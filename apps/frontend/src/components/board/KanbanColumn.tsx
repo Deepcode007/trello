@@ -6,7 +6,8 @@ import {
   Edit3,
   Trash2,
   X,
-  Loader2
+  Loader2,
+  GripVertical
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -24,6 +25,10 @@ import { useRole } from "../../hooks/useRole";
 import { useCreateIssueMutation } from "../../hooks/useKanbanQueries";
 import { getKanbanErrorMessage } from "../../lib/kanban-api";
 import type { BoardSection } from "../../lib/board-api";
+import { useSortable, SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import { useDroppable } from "@dnd-kit/core";
+import { CSS } from "@dnd-kit/utilities";
+import { cn } from "../../lib/utils";
 
 export interface KanbanColumnProps {
   section: BoardSection;
@@ -31,6 +36,7 @@ export interface KanbanColumnProps {
   orgId?: string;
   allSections: BoardSection[];
   onSelectCard?: (issueId: string) => void;
+  isOverlay?: boolean;
 }
 
 export function KanbanColumn({
@@ -38,10 +44,42 @@ export function KanbanColumn({
   boardId,
   orgId,
   allSections,
-  onSelectCard
+  onSelectCard,
+  isOverlay
 }: KanbanColumnProps) {
   const { isAdmin, canEditBoard } = useRole(orgId);
   const createIssueMutation = useCreateIssueMutation(boardId);
+
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging
+  } = useSortable({
+    id: section.id,
+    data: {
+      type: "column",
+      section
+    },
+    disabled: isOverlay
+  });
+
+  const { setNodeRef: setDroppableNodeRef, isOver } = useDroppable({
+    id: section.id,
+    data: {
+      type: "column",
+      section
+    },
+    disabled: isOverlay
+  });
+
+  const style: React.CSSProperties = {
+    transform: CSS.Translate.toString(transform),
+    transition,
+    opacity: isDragging ? 0.35 : 1
+  };
 
   const [isAddingCard, setIsAddingCard] = useState(false);
   const [newCardTitle, setNewCardTitle] = useState("");
@@ -84,16 +122,35 @@ export function KanbanColumn({
   return (
     <>
       <section
+        ref={setNodeRef}
+        style={style}
         data-testid={`column-${section.id}`}
-        className={`w-72 shrink-0 rounded-xl border bg-card/90 shadow-sm p-4 flex flex-col gap-3 transition-colors ${
+        className={cn(
+          "w-72 shrink-0 rounded-xl border bg-card/90 shadow-sm p-4 flex flex-col gap-3 transition-colors",
           isWipExceeded
             ? "border-destructive/60 bg-destructive/5 ring-1 ring-destructive/20"
-            : "border-border/80"
-        }`}
+            : "border-border/80",
+          isOver && "ring-2 ring-primary/40 bg-accent/20",
+          isDragging && "border-dashed border-primary/50 bg-secondary/30",
+          isOverlay && "shadow-2xl ring-2 ring-primary/50 rotate-1 bg-card"
+        )}
       >
         {/* Column Header */}
         <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2 min-w-0">
+          <div className="flex items-center gap-1.5 min-w-0">
+            {canEditBoard && (
+              <button
+                type="button"
+                {...attributes}
+                {...listeners}
+                data-testid={`column-drag-handle-${section.id}`}
+                aria-label={`Drag column ${section.title}`}
+                className="cursor-grab active:cursor-grabbing p-0.5 -ml-1 text-muted-foreground/60 hover:text-foreground rounded hover:bg-secondary shrink-0"
+              >
+                <GripVertical className="h-4 w-4" />
+              </button>
+            )}
+
             <h3 className="font-semibold text-sm truncate text-foreground">
               {section.title}
             </h3>
@@ -161,22 +218,34 @@ export function KanbanColumn({
           )}
         </div>
 
-        {/* Cards Container */}
-        <div className="flex-1 flex flex-col gap-2 min-h-[100px] overflow-y-auto">
-          {sortedIssues.length > 0 ? (
-            sortedIssues.map(issue => (
-              <KanbanCard
-                key={issue.id}
-                issue={issue}
-                onClick={() => onSelectCard?.(issue.id)}
-              />
-            ))
-          ) : (
-            <div className="flex items-center justify-center p-4 border border-dashed rounded-lg text-xs text-muted-foreground/60 italic">
-              No cards in column
-            </div>
-          )}
-        </div>
+        {/* Cards Container with SortableContext */}
+        <SortableContext
+          items={sortedIssues.map(issue => issue.id)}
+          strategy={verticalListSortingStrategy}
+        >
+          <div
+            ref={setDroppableNodeRef}
+            data-testid={`column-cards-${section.id}`}
+            className={cn(
+              "flex-1 flex flex-col gap-2 min-h-[100px] overflow-y-auto rounded-lg transition-colors p-1 -m-1",
+              isOver && "bg-primary/5"
+            )}
+          >
+            {sortedIssues.length > 0 ? (
+              sortedIssues.map(issue => (
+                <KanbanCard
+                  key={issue.id}
+                  issue={issue}
+                  onClick={() => onSelectCard?.(issue.id)}
+                />
+              ))
+            ) : (
+              <div className="flex items-center justify-center p-4 border border-dashed rounded-lg text-xs text-muted-foreground/60 italic">
+                No cards in column
+              </div>
+            )}
+          </div>
+        </SortableContext>
 
         {/* Quick Card Creation */}
         <div className="pt-1 border-t border-border/40">

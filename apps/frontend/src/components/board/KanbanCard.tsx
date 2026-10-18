@@ -3,10 +3,14 @@ import { Badge } from "../ui/badge";
 import { Avatar } from "../ui/avatar";
 import type { BoardIssue } from "../../lib/board-api";
 import { Clock, CheckSquare } from "lucide-react";
+import { useSortable } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import { cn } from "../../lib/utils";
 
 export interface KanbanCardProps {
   issue: BoardIssue;
   onClick?: () => void;
+  isOverlay?: boolean;
 }
 
 export function formatCardDate(isoString: string): string {
@@ -19,7 +23,7 @@ export function formatCardDate(isoString: string): string {
   }
 }
 
-export function KanbanCard({ issue, onClick }: KanbanCardProps) {
+export function KanbanCard({ issue, onClick, isOverlay }: KanbanCardProps) {
   // Compute checklist progress
   let totalChecklistItems = 0;
   let completedChecklistItems = 0;
@@ -40,11 +44,41 @@ export function KanbanCard({ issue, onClick }: KanbanCardProps) {
   const hasDueDate = Boolean(issue.dueDate);
   const isPastDue = hasDueDate && new Date(issue.dueDate!).getTime() < Date.now();
 
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging
+  } = useSortable({
+    id: issue.id,
+    data: {
+      type: "card",
+      issue
+    },
+    disabled: isOverlay
+  });
+
+  const style: React.CSSProperties = {
+    transform: CSS.Translate.toString(transform),
+    transition,
+    opacity: isDragging ? 0.35 : 1
+  };
+
   return (
     <article
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      {...listeners}
       data-testid={`card-${issue.id}`}
       onClick={onClick}
-      className="group relative flex flex-col gap-2 rounded-lg border bg-card p-3 shadow-xs transition-all hover:border-primary/50 hover:shadow-sm cursor-pointer select-none"
+      className={cn(
+        "group relative flex flex-col gap-2 rounded-lg border bg-card p-3 shadow-xs transition-all hover:border-primary/50 hover:shadow-sm cursor-grab active:cursor-grabbing select-none",
+        isDragging && "border-dashed border-primary/50 bg-secondary/30",
+        isOverlay && "shadow-2xl ring-2 ring-primary/50 rotate-1 cursor-grabbing bg-card"
+      )}
     >
       {/* Top Metadata Row: Labels & Priority */}
       <div className="flex flex-wrap items-center justify-between gap-1.5">

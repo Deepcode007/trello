@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import type { BoardDetail, BoardIssue } from "../lib/board-api";
 import {
   kanbanApi,
   type CreateSectionPayload,
@@ -38,7 +39,39 @@ export function useUpdateSectionMutation(boardId: string | null | undefined) {
     }) => {
       return kanbanApi.updateSection(sectionId, updates);
     },
-    onSuccess: () => {
+    onMutate: async ({ sectionId, updates }) => {
+      if (!boardId) return { previousBoard: undefined };
+      await queryClient.cancelQueries({ queryKey: ["board", boardId] });
+      const previousBoard = queryClient.getQueryData<BoardDetail>(["board", boardId]);
+
+      if (previousBoard && previousBoard.section) {
+        const updatedSections = previousBoard.section.map(sec => {
+          if (sec.id === sectionId) {
+            return {
+              ...sec,
+              ...updates,
+              position: updates.position !== undefined ? updates.position : sec.position
+            };
+          }
+          return sec;
+        });
+
+        updatedSections.sort((a, b) => a.position - b.position);
+
+        queryClient.setQueryData<BoardDetail>(["board", boardId], {
+          ...previousBoard,
+          section: updatedSections
+        });
+      }
+
+      return { previousBoard };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previousBoard && boardId) {
+        queryClient.setQueryData(["board", boardId], context.previousBoard);
+      }
+    },
+    onSettled: () => {
       if (boardId) {
         queryClient.invalidateQueries({ queryKey: ["board", boardId] });
       }
@@ -163,7 +196,65 @@ export function useMoveIssueMutation(boardId: string | null | undefined) {
     }) => {
       return kanbanApi.moveIssue(issueId, sectionId, position);
     },
-    onSuccess: (_, vars) => {
+    onMutate: async ({ issueId, sectionId, position }) => {
+      if (!boardId) return { previousBoard: undefined };
+      await queryClient.cancelQueries({ queryKey: ["board", boardId] });
+      const previousBoard = queryClient.getQueryData<BoardDetail>(["board", boardId]);
+
+      if (previousBoard && previousBoard.section) {
+        let movedCard: BoardIssue | null = null;
+
+        // Step 1: Extract moved issue from current section
+        const newSections = previousBoard.section.map(sec => {
+          const card = sec.issues?.find(iss => iss.id === issueId);
+          if (card) {
+            movedCard = card;
+            return {
+              ...sec,
+              issues: (sec.issues || []).filter(iss => iss.id !== issueId)
+            };
+          }
+          return sec;
+        });
+
+        // Step 2: Insert into target section with new sectionId and position
+        const targetCard = movedCard as BoardIssue | null;
+        if (targetCard) {
+          const updatedCard: BoardIssue = {
+            ...targetCard,
+            sectionId,
+            position: position !== undefined ? position : targetCard.position
+          };
+
+          const finalSections = newSections.map(sec => {
+            if (sec.id === sectionId) {
+              const issues = [...(sec.issues || []), updatedCard].sort((a, b) => {
+                if (a.position !== b.position) return a.position - b.position;
+                return a.id.localeCompare(b.id);
+              });
+              return {
+                ...sec,
+                issues
+              };
+            }
+            return sec;
+          });
+
+          queryClient.setQueryData<BoardDetail>(["board", boardId], {
+            ...previousBoard,
+            section: finalSections
+          });
+        }
+      }
+
+      return { previousBoard };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previousBoard && boardId) {
+        queryClient.setQueryData(["board", boardId], context.previousBoard);
+      }
+    },
+    onSettled: (_, __, vars) => {
       if (boardId) {
         queryClient.invalidateQueries({ queryKey: ["board", boardId] });
       }
