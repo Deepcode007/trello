@@ -10,8 +10,7 @@ export async function profileHandler(req: Request, res: Response)
             id: req.id
         },
         omit: {
-            password: true,
-            id: true
+            password: true
         },
         include: {
             memberships: {

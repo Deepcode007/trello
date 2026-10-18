@@ -28,16 +28,75 @@ export async function getBoardDetails(req: Request, res: Response)
                     { id: "asc" }
                 ],
                 select: {
+                    id: true,
+                    title: true,
+                    position: true,
+                    wipLimit: true,
+                    isArchived: true,
                     issues: {
                         orderBy: [
                             { position: "asc" },
                             { createdAt: "asc" },
                             { id: "asc" }
-                        ]
-                    },
-                    title: true,
-                    id: true,
-                    position: true
+                        ],
+                        select: {
+                            id: true,
+                            title: true,
+                            description: true,
+                            position: true,
+                            priority: true,
+                            dueDate: true,
+                            startDate: true,
+                            isArchived: true,
+                            gh_url: true,
+                            boardId: true,
+                            sectionId: true,
+                            createdAt: true,
+                            updatedAt: true,
+                            labels: {
+                                select: {
+                                    label: {
+                                        select: {
+                                            id: true,
+                                            name: true,
+                                            color: true
+                                        }
+                                    }
+                                }
+                            },
+                            issueMappings: {
+                                select: {
+                                    user: {
+                                        select: {
+                                            id: true,
+                                            username: true,
+                                            email: true,
+                                            name: true,
+                                            avatarUrl: true
+                                        }
+                                    }
+                                }
+                            },
+                            checklists: {
+                                orderBy: [
+                                    { position: "asc" },
+                                    { createdAt: "asc" },
+                                    { id: "asc" }
+                                ],
+                                select: {
+                                    id: true,
+                                    title: true,
+                                    position: true,
+                                    items: {
+                                        select: {
+                                            id: true,
+                                            isCompleted: true
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             },
             orgId: true
