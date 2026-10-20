@@ -1,4 +1,5 @@
 import { EventEmitter } from "node:events";
+import { env } from "../env";
 import { formatBoardTopic, type BroadcastEvent, type BroadcastOptions, type CardMovedPayload } from "realtime";
 
 export type EvictionHandler = (options: {
@@ -14,7 +15,7 @@ let singleton: WebSocketBroadcaster | undefined;
 export class WebSocketBroadcaster extends EventEmitter
 {
     private server: InternalServer | null = null;
-    private wsPort = Number(process.env.ws_port || process.env.WS_PORT || 3001);
+    private wsPort = Number(env.ws_port);
     private evictionHandler: EvictionHandler | null = null;
 
     public static getInstance(): WebSocketBroadcaster
@@ -64,8 +65,8 @@ export class WebSocketBroadcaster extends EventEmitter
         }
         try
         {
-            const endpoint = `${(process.env.WS_INTERNAL_URL || `http://127.0.0.1:${this.wsPort}`).replace(/\/$/, "")}/internal/broadcast`;
-            const secret = process.env.INTERNAL_BROADCAST_SECRET || process.env.jwt_key || process.env.JWT_SECRET || "";
+            const endpoint = `${(env.WS_INTERNAL_URL || `http://127.0.0.1:${this.wsPort}`).replace(/\/$/, "")}/internal/broadcast`;
+            const secret = env.INTERNAL_BROADCAST_SECRET || env.jwt_key || "";
             const response = await fetch(endpoint, {
                 method: "POST",
                 headers: { "Content-Type": "application/json", "x-internal-secret": secret },
@@ -86,14 +87,14 @@ export class WebSocketBroadcaster extends EventEmitter
             try { return Boolean(await this.evictionHandler({ userId, orgId, boardIds, reason: "FORBIDDEN_REVOKED: Organization membership terminated" })); }
             catch { return false; }
         }
-        const endpoint = `${(process.env.WS_INTERNAL_URL || `http://127.0.0.1:${this.wsPort}`).replace(/\/$/, "")}/internal/evict-user`;
+        const endpoint = `${(env.WS_INTERNAL_URL || `http://127.0.0.1:${this.wsPort}`).replace(/\/$/, "")}/internal/evict-user`;
         for (let attempt = 0; attempt <= maxRetries; attempt++)
         {
             try
             {
                 const response = await fetch(endpoint, {
                     method: "POST",
-                    headers: { "Content-Type": "application/json", "x-internal-secret": process.env.INTERNAL_BROADCAST_SECRET || process.env.jwt_key || process.env.JWT_SECRET || "" },
+                    headers: { "Content-Type": "application/json", "x-internal-secret": env.INTERNAL_BROADCAST_SECRET || env.jwt_key || "" },
                     body: JSON.stringify({ userId, orgId, boardIds, reason: "FORBIDDEN_REVOKED: Organization membership terminated" }),
                     signal: AbortSignal.timeout(1000)
                 });
@@ -115,3 +116,4 @@ export class WebSocketBroadcaster extends EventEmitter
 }
 
 export const wsBroadcaster = WebSocketBroadcaster.getInstance();
+import { env } from "../env";

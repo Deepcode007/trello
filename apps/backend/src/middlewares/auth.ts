@@ -1,6 +1,6 @@
 import jwt, { type JwtPayload, type Secret } from "jsonwebtoken";
 import type { Request, Response, NextFunction } from "express";
-import { env } from "../..";
+import { env } from "../env";
 
 const secret = env.jwt_key as Secret;
 

@@ -2,19 +2,12 @@ import { wsBroadcaster } from "./src/services/broadcaster.ts";
 import express from "express";
 import cors from "cors";
 
-import { envSchema } from "./src/types/env.ts";
+import { env } from "./src/env.ts";
 
 export const app = express();
 app.use(express.json());
 app.use(cors());
 
-let result = envSchema.safeParse(process.env);
-if (!result.success)
-{
-    console.log("Env Problem");
-    process.exit(1);
-}
-export const env = result.data;
 const port = env.port;
 
 await import("./src/routes/routes.ts");

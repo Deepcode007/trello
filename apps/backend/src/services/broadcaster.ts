@@ -1,6 +1,7 @@
 import { EventEmitter } from "node:events";
 import { randomUUID } from "node:crypto";
 import { prisma } from "db/prisma";
+import { env } from "../env";
 import { cleanBoardId, formatBoardTopic, type BroadcastEvent, type BroadcastOptions, type CardMovedPayload, type CardCreatedPayload, type CardUpdatedPayload, type CardDeletedPayload, type ListReorderedPayload } from "realtime";
 
 let singleton: WebSocketBroadcaster | undefined;
@@ -41,13 +42,13 @@ export class WebSocketBroadcaster extends EventEmitter
     private outboxDrain: Promise<string[]> | null = null;
     private outboxQueue: Promise<void> = Promise.resolve();
     private outboxWorkerId: string | null = null;
-    private outboxIntervalMs = Math.max(1000, Number(process.env.OUTBOX_RETRY_INTERVAL_MS) || 5000);
-    private readonly outboxLeaseMs = Math.max(10000, Number(process.env.OUTBOX_LEASE_MS) || 30000);
+    private outboxIntervalMs = Math.max(1000, Number(env.OUTBOX_RETRY_INTERVAL_MS) || 5000);
+    private readonly outboxLeaseMs = Math.max(10000, Number(env.OUTBOX_LEASE_MS) || 30000);
 
     constructor()
     {
         super();
-        const envPort = process.env.ws_port;
+        const envPort = env.ws_port;
         if (envPort && !isNaN(Number(envPort)))
         {
             this.wsPort = Number(envPort);
@@ -418,8 +419,8 @@ export class WebSocketBroadcaster extends EventEmitter
         // The backend and WebSocket server run as separate processes.
         try
         {
-            const endpoint = `${(process.env.WS_INTERNAL_URL || `http://127.0.0.1:${this.wsPort}`).replace(/\/$/, "")}/internal/broadcast`;
-            const internalSecret = process.env.INTERNAL_BROADCAST_SECRET || process.env.jwt_key || process.env.JWT_SECRET || "";
+            const endpoint = `${(env.WS_INTERNAL_URL || `http://127.0.0.1:${this.wsPort}`).replace(/\/$/, "")}/internal/broadcast`;
+            const internalSecret = env.INTERNAL_BROADCAST_SECRET || env.jwt_key || "";
             const headers: Record<string, string> = { "Content-Type": "application/json" };
             if (internalSecret)
             {
@@ -456,8 +457,8 @@ export class WebSocketBroadcaster extends EventEmitter
 
         this.emit("evictUser", { userId, orgId, boardIds });
 
-        const endpoint = `${(process.env.WS_INTERNAL_URL || `http://127.0.0.1:${this.wsPort}`).replace(/\/$/, "")}/internal/evict-user`;
-        const internalSecret = process.env.INTERNAL_BROADCAST_SECRET || process.env.jwt_key || process.env.JWT_SECRET || "";
+        const endpoint = `${(env.WS_INTERNAL_URL || `http://127.0.0.1:${this.wsPort}`).replace(/\/$/, "")}/internal/evict-user`;
+        const internalSecret = env.INTERNAL_BROADCAST_SECRET || env.jwt_key || "";
         const headers: Record<string, string> = { "Content-Type": "application/json" };
         if (internalSecret) headers["x-internal-secret"] = internalSecret;
         const bodyStr = JSON.stringify({

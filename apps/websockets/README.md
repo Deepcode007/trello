@@ -22,6 +22,8 @@ Configure `apps/websockets/.env`:
 ws_port="3001"
 jwt_key="your-super-secret-jwt-key"
 INTERNAL_BROADCAST_SECRET="your-internal-service-secret"
+WS_IDLE_TIMEOUT="60"
+WS_HEARTBEAT_INTERVAL="30000"
 ```
 
 | Variable | Default | Description |

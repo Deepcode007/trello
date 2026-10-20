@@ -357,7 +357,7 @@ export function handleUpgradeRequest(
             try
             {
                 // Internal secret protection if secret is configured (decoupled with fallback)
-                const expectedSecret = process.env.INTERNAL_BROADCAST_SECRET || jwtSecret;
+                const expectedSecret = env.INTERNAL_BROADCAST_SECRET || jwtSecret;
                 const internalSecret = req.headers.get("x-internal-secret");
                 if (expectedSecret && internalSecret !== expectedSecret)
                 {
@@ -424,7 +424,7 @@ export function handleUpgradeRequest(
         {
             try
             {
-                const expectedSecret = process.env.INTERNAL_BROADCAST_SECRET || jwtSecret;
+                const expectedSecret = env.INTERNAL_BROADCAST_SECRET || jwtSecret;
                 const internalSecret = req.headers.get("x-internal-secret");
                 if (expectedSecret && internalSecret !== expectedSecret)
                 {
@@ -873,20 +873,20 @@ export function stopHeartbeat(server?: Pick<Server<WebSocketData>, "publish"> | 
 
 export function createWebSocketServer(options: WebSocketServerOptions = {}): Server<WebSocketData>
 {
-    const port = options.port ?? Number(process.env.ws_port || process.env.WS_PORT || 3001);
-    const jwtSecret = options.jwtSecret ?? process.env.jwt_key ?? process.env.JWT_SECRET;
+    const port = options.port ?? Number(env.ws_port);
+    const jwtSecret = options.jwtSecret ?? env.jwt_key;
     if (!jwtSecret)
     {
-        throw new Error("JWT secret must be configured for WebSocket server via options.jwtSecret, process.env.jwt_key, or process.env.JWT_SECRET");
+        throw new Error("JWT secret must be configured for WebSocket server via options.jwtSecret or the validated jwt_key environment setting");
     }
     const hostname = options.hostname ?? "0.0.0.0";
     const checker = options.checkAccess ?? activeBoardAccessChecker;
 
-    const idleTimeout = options.idleTimeout ?? (process.env.WS_IDLE_TIMEOUT ? Number(process.env.WS_IDLE_TIMEOUT) : 60);
+    const idleTimeout = options.idleTimeout ?? (env.WS_IDLE_TIMEOUT ? Number(env.WS_IDLE_TIMEOUT) : 60);
     const sendPings = options.sendPings ?? true;
     const heartbeatInterval = options.heartbeatInterval !== undefined
         ? options.heartbeatInterval
-        : (process.env.WS_HEARTBEAT_INTERVAL !== undefined ? Number(process.env.WS_HEARTBEAT_INTERVAL) : 30000);
+        : (env.WS_HEARTBEAT_INTERVAL !== undefined ? Number(env.WS_HEARTBEAT_INTERVAL) : 30000);
 
     const server = Bun.serve<WebSocketData>({
         port,
@@ -965,3 +965,4 @@ export function createWebSocketServer(options: WebSocketServerOptions = {}): Ser
 
     return server;
 }
+import { env } from "./env";

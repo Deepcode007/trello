@@ -4,6 +4,9 @@ export const envSchema = zod.object({
     ws_port: zod.string().default("3001").refine(x => !isNaN(Number(x)), { message: "ws_port must be a valid number" }),
     jwt_key: zod.string(),
     INTERNAL_BROADCAST_SECRET: zod.string().optional(),
+    WS_INTERNAL_URL: zod.string().url().optional(),
+    WS_IDLE_TIMEOUT: zod.string().optional(),
+    WS_HEARTBEAT_INTERVAL: zod.string().optional(),
     port: zod.string().optional()
 });
 

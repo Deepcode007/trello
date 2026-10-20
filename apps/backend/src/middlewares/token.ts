@@ -1,5 +1,5 @@
 import jwt, { type Secret } from "jsonwebtoken";
-import { env } from "../..";
+import { env } from "../env";
 const secret = env.jwt_key as Secret;
 
 
