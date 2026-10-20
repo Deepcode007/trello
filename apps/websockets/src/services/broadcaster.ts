@@ -16,6 +16,7 @@ export class WebSocketBroadcaster extends EventEmitter
 {
     private server: InternalServer | null = null;
     private wsPort = Number(env.ws_port);
+    private customPort = false;
     private evictionHandler: EvictionHandler | null = null;
 
     public static getInstance(): WebSocketBroadcaster
@@ -26,7 +27,11 @@ export class WebSocketBroadcaster extends EventEmitter
     public setServer(server: InternalServer | null): void { this.server = server; }
     public getServer(): InternalServer | null { return this.server; }
     public isServerAttached(): boolean { return this.server !== null; }
-    public setPort(port: number): void { this.wsPort = port; }
+    public setPort(port: number): void
+    {
+        this.wsPort = port;
+        this.customPort = true;
+    }
     public setEvictionHandler(handler: EvictionHandler): void { this.evictionHandler = handler; }
     public getEvictionHandler(): EvictionHandler | null { return this.evictionHandler; }
 
@@ -65,7 +70,8 @@ export class WebSocketBroadcaster extends EventEmitter
         }
         try
         {
-            const endpoint = `${(env.WS_INTERNAL_URL || `http://127.0.0.1:${this.wsPort}`).replace(/\/$/, "")}/internal/broadcast`;
+            const baseUrl = this.customPort ? `http://127.0.0.1:${this.wsPort}` : (env.WS_INTERNAL_URL || `http://127.0.0.1:${this.wsPort}`);
+            const endpoint = `${baseUrl.replace(/\/$/, "")}/internal/broadcast`;
             const secret = env.INTERNAL_BROADCAST_SECRET || env.jwt_key || "";
             const response = await fetch(endpoint, {
                 method: "POST",
@@ -87,7 +93,8 @@ export class WebSocketBroadcaster extends EventEmitter
             try { return Boolean(await this.evictionHandler({ userId, orgId, boardIds, reason: "FORBIDDEN_REVOKED: Organization membership terminated" })); }
             catch { return false; }
         }
-        const endpoint = `${(env.WS_INTERNAL_URL || `http://127.0.0.1:${this.wsPort}`).replace(/\/$/, "")}/internal/evict-user`;
+        const baseUrl = this.customPort ? `http://127.0.0.1:${this.wsPort}` : (env.WS_INTERNAL_URL || `http://127.0.0.1:${this.wsPort}`);
+        const endpoint = `${baseUrl.replace(/\/$/, "")}/internal/evict-user`;
         for (let attempt = 0; attempt <= maxRetries; attempt++)
         {
             try
