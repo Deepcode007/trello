@@ -29,8 +29,11 @@ import {
   Calendar,
   ExternalLink,
   Loader2,
-  Check
+  Check,
+  Clock
 } from "lucide-react";
+import { cn } from "../../../lib/utils";
+import { getDueDateUrgency } from "../../../lib/date-urgency";
 
 export interface CardDetailModalProps {
   issueId: string | null;
@@ -367,6 +370,26 @@ export function CardDetailModal({
                     disabled={!canEditBoard}
                     className="h-8 text-xs"
                   />
+                  {dueDate && (() => {
+                    const urgency = getDueDateUrgency(dueDate);
+                    return (
+                      <div
+                        data-testid="detail-due-date-urgency"
+                        className="pt-1 flex items-center gap-1.5"
+                      >
+                        <span
+                          data-testid={`detail-due-date-${urgency.level}`}
+                          className={cn(
+                            "inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium border",
+                            urgency.badgeClasses
+                          )}
+                        >
+                          <Clock className="h-3 w-3 shrink-0" />
+                          <span>{urgency.label}</span>
+                        </span>
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
 

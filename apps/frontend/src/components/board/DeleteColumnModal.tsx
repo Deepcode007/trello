@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   Dialog,
   DialogContent,
@@ -37,7 +37,10 @@ export function DeleteColumnModal({
   const deleteSectionMutation = useDeleteSectionMutation(boardId);
 
   const cardCount = section.issues?.length ?? 0;
-  const otherSections = allSections.filter(s => s.id !== section.id);
+  const otherSections = useMemo(
+    () => allSections.filter(s => s.id !== section.id),
+    [allSections, section.id]
+  );
 
   const [targetSectionId, setTargetSectionId] = useState<string>(
     otherSections[0]?.id || ""
@@ -46,10 +49,15 @@ export function DeleteColumnModal({
 
   useEffect(() => {
     if (open) {
-      setTargetSectionId(otherSections[0]?.id || "");
+      setTargetSectionId(prev => {
+        if (prev && otherSections.some(s => s.id === prev)) {
+          return prev;
+        }
+        return otherSections[0]?.id || "";
+      });
       setError(null);
     }
-  }, [open, section, allSections]);
+  }, [open, otherSections]);
 
   const cannotDeleteSoleColumnWithCards = cardCount > 0 && otherSections.length === 0;
 
@@ -163,7 +171,7 @@ export function DeleteColumnModal({
                 ))}
               </select>
               <p className="text-xs text-muted-foreground">
-                All {cardCount} cards in "{section.title}" will be moved to the selected column before deletion.
+                All {cardCount} cards in &quot;{section.title}&quot; will be moved to the selected column before deletion.
               </p>
             </div>
           )}

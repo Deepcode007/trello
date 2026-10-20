@@ -10,8 +10,12 @@ import {
     Building2,
     Shield,
     PlusCircle,
-    CheckCircle2
+    CheckCircle2,
+    Menu,
+    X
 } from "lucide-react";
+import { ThemeToggle } from "./components/ui/theme-toggle";
+import { useThemeStore } from "./store/useThemeStore";
 import { useAuthStore } from "./store/useAuthStore";
 import { useOrgStore } from "./store/useOrgStore";
 import { useRole } from "./hooks/useRole";
@@ -97,6 +101,7 @@ function AppLayout({ children }: { children: React.ReactNode })
 
     const [headerMembersOpen, setHeaderMembersOpen] = useState(false);
     const [headerInvitesOpen, setHeaderInvitesOpen] = useState(false);
+    const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
     const handleLogout = () =>
     {
@@ -120,28 +125,46 @@ function AppLayout({ children }: { children: React.ReactNode })
                     </div>
 
                     <div className="flex items-center gap-2 sm:gap-3">
+                        <ThemeToggle />
                         {user ? (
-                            <div className="flex items-center gap-2 sm:gap-3">
-                                {isAdmin && activeOrgId && (
-                                    <Button
-                                        variant="outline"
-                                        size="sm"
-                                        onClick={() => setHeaderMembersOpen(true)}
-                                        className="h-8 gap-1.5 text-xs hidden md:inline-flex"
-                                    >
-                                        <Users className="h-3.5 w-3.5 text-muted-foreground" />
-                                        <span>Members</span>
+                            <>
+                                <div className="hidden md:flex items-center gap-2 sm:gap-3">
+                                    {isAdmin && activeOrgId && (
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={() => setHeaderMembersOpen(true)}
+                                            className="h-8 gap-1.5 text-xs"
+                                        >
+                                            <Users className="h-3.5 w-3.5 text-muted-foreground" />
+                                            <span>Members</span>
+                                        </Button>
+                                    )}
+                                    <div className="flex items-center gap-2 text-sm text-muted-foreground bg-secondary/50 px-2.5 py-1 rounded-full border border-border/50">
+                                        <UserIcon className="h-3.5 w-3.5" />
+                                        <span className="font-medium text-foreground text-xs">{user.username || user.name || user.email}</span>
+                                    </div>
+                                    <Button variant="outline" size="sm" onClick={handleLogout} className="h-8 gap-1.5 text-xs">
+                                        <LogOut className="h-3.5 w-3.5" />
+                                        Log out
                                     </Button>
-                                )}
-                                <div className="flex items-center gap-2 text-sm text-muted-foreground bg-secondary/50 px-2.5 py-1 rounded-full border border-border/50">
-                                    <UserIcon className="h-3.5 w-3.5" />
-                                    <span className="font-medium text-foreground text-xs">{user.username || user.name || user.email}</span>
                                 </div>
-                                <Button variant="outline" size="sm" onClick={handleLogout} className="h-8 gap-1.5 text-xs">
-                                    <LogOut className="h-3.5 w-3.5" />
-                                    Log out
-                                </Button>
-                            </div>
+
+                                {/* Mobile Hamburger Menu Toggle */}
+                                <div className="flex md:hidden items-center">
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => setMobileMenuOpen(prev => !prev)}
+                                        data-testid="mobile-nav-toggle"
+                                        aria-label="Toggle navigation menu"
+                                        aria-expanded={mobileMenuOpen}
+                                        className="h-8 w-8 p-0"
+                                    >
+                                        {mobileMenuOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
+                                    </Button>
+                                </div>
+                            </>
                         ) : (
                             <div className="flex items-center gap-2">
                                 <Link to="/login">
@@ -154,6 +177,65 @@ function AppLayout({ children }: { children: React.ReactNode })
                         )}
                     </div>
                 </div>
+
+                {/* Mobile Dropdown Nav Menu */}
+                {mobileMenuOpen && user && (
+                    <div
+                        data-testid="mobile-nav-menu"
+                        className="md:hidden border-t border-border/60 bg-card p-4 space-y-3 shadow-md"
+                    >
+                        <div className="flex items-center gap-2 text-sm text-foreground bg-secondary/40 p-2.5 rounded-lg border border-border/40">
+                            <UserIcon className="h-4 w-4 text-muted-foreground shrink-0" />
+                            <div className="truncate">
+                                <div className="font-medium text-xs truncate">{user.username || user.name || "User"}</div>
+                                <div className="text-[11px] text-muted-foreground truncate">{user.email}</div>
+                            </div>
+                        </div>
+
+                        {pendingInvites.length > 0 && (
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => {
+                                    setHeaderInvitesOpen(true);
+                                    setMobileMenuOpen(false);
+                                }}
+                                className="w-full justify-start h-8 gap-2 text-xs border-amber-500/40 text-amber-700 dark:text-amber-300"
+                            >
+                                <Mail className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
+                                <span>Pending Invites ({pendingInvites.length})</span>
+                            </Button>
+                        )}
+
+                        {isAdmin && activeOrgId && (
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => {
+                                    setHeaderMembersOpen(true);
+                                    setMobileMenuOpen(false);
+                                }}
+                                className="w-full justify-start h-8 gap-2 text-xs"
+                            >
+                                <Users className="h-3.5 w-3.5 text-muted-foreground" />
+                                <span>Manage Members</span>
+                            </Button>
+                        )}
+
+                        <Button
+                            variant="destructive"
+                            size="sm"
+                            onClick={() => {
+                                handleLogout();
+                                setMobileMenuOpen(false);
+                            }}
+                            className="w-full justify-start h-8 gap-2 text-xs"
+                        >
+                            <LogOut className="h-3.5 w-3.5" />
+                            <span>Log out</span>
+                        </Button>
+                    </div>
+                )}
 
                 {/* Prominent Pending Invitations Notification Bar */}
                 {user && pendingInvites.length > 0 && (
@@ -379,6 +461,7 @@ export function App()
 
     useEffect(() =>
     {
+        useThemeStore.getState().initTheme();
         loadUser();
     }, [loadUser]);
 
