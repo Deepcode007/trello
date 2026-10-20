@@ -38,6 +38,7 @@ interface ClaimedOutboxEvent
 export class WebSocketBroadcaster extends EventEmitter
 {
     private wsPort: number = 3001;
+    private customPort: boolean = false;
     private outboxTimer: ReturnType<typeof setInterval> | null = null;
     private outboxDrain: Promise<string[]> | null = null;
     private outboxQueue: Promise<void> = Promise.resolve();
@@ -63,6 +64,7 @@ export class WebSocketBroadcaster extends EventEmitter
     public setPort(port: number): void
     {
         this.wsPort = port;
+        this.customPort = true;
     }
 
     public publish(topic: string, message: unknown): number
@@ -419,7 +421,8 @@ export class WebSocketBroadcaster extends EventEmitter
         // The backend and WebSocket server run as separate processes.
         try
         {
-            const endpoint = `${(env.WS_INTERNAL_URL || `http://127.0.0.1:${this.wsPort}`).replace(/\/$/, "")}/internal/broadcast`;
+            const baseUrl = this.customPort ? `http://127.0.0.1:${this.wsPort}` : (env.WS_INTERNAL_URL || `http://127.0.0.1:${this.wsPort}`);
+            const endpoint = `${baseUrl.replace(/\/$/, "")}/internal/broadcast`;
             const internalSecret = env.INTERNAL_BROADCAST_SECRET || env.jwt_key || "";
             const headers: Record<string, string> = { "Content-Type": "application/json" };
             if (internalSecret)
@@ -457,7 +460,8 @@ export class WebSocketBroadcaster extends EventEmitter
 
         this.emit("evictUser", { userId, orgId, boardIds });
 
-        const endpoint = `${(env.WS_INTERNAL_URL || `http://127.0.0.1:${this.wsPort}`).replace(/\/$/, "")}/internal/evict-user`;
+        const baseUrl = this.customPort ? `http://127.0.0.1:${this.wsPort}` : (env.WS_INTERNAL_URL || `http://127.0.0.1:${this.wsPort}`);
+        const endpoint = `${baseUrl.replace(/\/$/, "")}/internal/evict-user`;
         const internalSecret = env.INTERNAL_BROADCAST_SECRET || env.jwt_key || "";
         const headers: Record<string, string> = { "Content-Type": "application/json" };
         if (internalSecret) headers["x-internal-secret"] = internalSecret;
