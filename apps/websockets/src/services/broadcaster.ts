@@ -116,4 +116,3 @@ export class WebSocketBroadcaster extends EventEmitter
 }
 
 export const wsBroadcaster = WebSocketBroadcaster.getInstance();
-import { env } from "../env";
