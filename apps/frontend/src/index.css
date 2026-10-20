@@ -8,6 +8,8 @@
     --foreground: 222 47% 11%;
     --card: 0 0% 100%;
     --card-foreground: 222 47% 11%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
     --primary: 221 83% 53%;
     --primary-foreground: 210 40% 98%;
     --secondary: 210 40% 96%;
@@ -29,6 +31,8 @@
     --foreground: 210 40% 98%;
     --card: 224 71% 4%;
     --card-foreground: 210 40% 98%;
+    --popover: 224 71% 4%;
+    --popover-foreground: 210 40% 98%;
     --primary: 217 91% 60%;
     --primary-foreground: 222 47% 11%;
     --secondary: 217 19% 27%;
@@ -42,6 +46,15 @@
     --border: 217 19% 27%;
     --input: 217 19% 27%;
     --ring: 224 76% 48%;
+  }
+}
+
+@layer utilities {
+  .bg-popover {
+    background-color: hsl(var(--popover, var(--card)));
+  }
+  .text-popover-foreground {
+    color: hsl(var(--popover-foreground, var(--card-foreground)));
   }
 }
 
