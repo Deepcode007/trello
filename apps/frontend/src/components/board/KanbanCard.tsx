@@ -13,15 +13,9 @@ export interface KanbanCardProps {
   isOverlay?: boolean;
 }
 
-export function formatCardDate(isoString: string): string {
-  try {
-    const d = new Date(isoString);
-    if (isNaN(d.getTime())) return isoString;
-    return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-  } catch {
-    return isoString;
-  }
-}
+import { getDueDateUrgency, formatCardDate } from "../../lib/date-urgency";
+
+export { formatCardDate };
 
 export function KanbanCard({ issue, onClick, isOverlay }: KanbanCardProps) {
   // Compute checklist progress
@@ -40,9 +34,10 @@ export function KanbanCard({ issue, onClick, isOverlay }: KanbanCardProps) {
     }
   }
 
-  // Compute past due
+  // Compute past due and urgency
   const hasDueDate = Boolean(issue.dueDate);
-  const isPastDue = hasDueDate && new Date(issue.dueDate!).getTime() < Date.now();
+  const urgency = getDueDateUrgency(issue.dueDate);
+  const isPastDue = urgency.isPastDue;
 
   const {
     attributes,
@@ -119,13 +114,17 @@ export function KanbanCard({ issue, onClick, isOverlay }: KanbanCardProps) {
           <div className="flex items-center gap-2.5">
             {hasDueDate && (
               <div
-                className={`flex items-center gap-1 text-[11px] font-medium ${
-                  isPastDue ? "text-destructive" : "text-muted-foreground"
-                }`}
-                {...(isPastDue ? { "data-testid": "due-date-past-due" } : {})}
+                className={cn(
+                  "flex items-center gap-1 text-[11px] font-medium px-1 py-0.5 rounded",
+                  isPastDue ? "text-destructive" : urgency.badgeClasses
+                )}
+                data-urgency={urgency.level}
+                {...(isPastDue ? { "data-testid": "due-date-past-due" } : { "data-testid": "due-date-badge" })}
               >
                 <Clock className="h-3 w-3 shrink-0" />
-                <span>{formatCardDate(issue.dueDate!)}</span>
+                <span data-testid={`due-date-urgency-${urgency.level}`}>
+                  {formatCardDate(issue.dueDate!)}
+                </span>
               </div>
             )}
 

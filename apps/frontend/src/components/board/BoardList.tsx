@@ -1,6 +1,7 @@
-import React, { useState } from "react";
-import { PlusCircle, Kanban, AlertCircle, RefreshCw } from "lucide-react";
+import React, { useState, useMemo } from "react";
+import { PlusCircle, Kanban, AlertCircle, RefreshCw, Search, X } from "lucide-react";
 import { Button } from "../ui/button";
+import { Input } from "../ui/input";
 import { Badge } from "../ui/badge";
 import { BoardCard } from "./BoardCard";
 import { CreateBoardModal } from "./CreateBoardModal";
@@ -14,10 +15,28 @@ interface BoardListProps {
 
 export function BoardList({ orgId }: BoardListProps) {
   const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [boardSearch, setBoardSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "archived">("all");
+
   const { data: boards, isLoading, isError, error, refetch } = useOrgBoardsQuery(orgId);
   const { canCreateBoard } = useRole(orgId);
 
-  const boardList = boards ?? [];
+  const boardList = useMemo(() => boards ?? [], [boards]);
+
+  const filteredBoards = useMemo(() => {
+    return boardList.filter(board => {
+      if (statusFilter === "active" && board.isArchived) return false;
+      if (statusFilter === "archived" && !board.isArchived) return false;
+
+      const q = boardSearch.trim().toLowerCase();
+      if (q) {
+        const titleMatch = (board.title || "").toLowerCase().includes(q);
+        const descMatch = (board.description || "").toLowerCase().includes(q);
+        if (!titleMatch && !descMatch) return false;
+      }
+      return true;
+    });
+  }, [boardList, boardSearch, statusFilter]);
 
   return (
     <section className="space-y-4" aria-label="Organization Boards">
@@ -34,7 +53,9 @@ export function BoardList({ orgId }: BoardListProps) {
               </h2>
               {!isLoading && (
                 <Badge variant="secondary" className="px-2 py-0.5 text-xs font-semibold">
-                  {boardList.length}
+                  {filteredBoards.length !== boardList.length
+                    ? `${filteredBoards.length} of ${boardList.length}`
+                    : boardList.length}
                 </Badge>
               )}
             </div>
@@ -138,13 +159,90 @@ export function BoardList({ orgId }: BoardListProps) {
         </div>
       )}
 
-      {/* Board Cards Grid */}
+      {/* Board Search and Status Filter Bar */}
       {!isLoading && !isError && boardList.length > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+          <div className="flex items-center gap-2 flex-1 max-w-sm relative">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+            <Input
+              type="text"
+              placeholder="Search boards..."
+              value={boardSearch}
+              onChange={e => setBoardSearch(e.target.value)}
+              data-testid="board-search-input"
+              className="h-8 pl-8 pr-8 text-xs bg-background"
+            />
+            {boardSearch && (
+              <button
+                type="button"
+                onClick={() => setBoardSearch("")}
+                data-testid="clear-board-search"
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 rounded text-muted-foreground hover:text-foreground"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2">
+            <select
+              value={statusFilter}
+              onChange={e => setStatusFilter(e.target.value as "all" | "active" | "archived")}
+              data-testid="board-status-filter"
+              className="h-8 rounded-md border border-input bg-background px-2.5 text-xs font-medium text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+            >
+              <option value="all">All Boards</option>
+              <option value="active">Active Only</option>
+              <option value="archived">Archived Only</option>
+            </select>
+
+            {(boardSearch || statusFilter !== "all") && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setBoardSearch("");
+                  setStatusFilter("all");
+                }}
+                data-testid="reset-board-filters"
+                className="h-8 text-xs text-muted-foreground hover:text-foreground"
+              >
+                Reset
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* No matching boards state */}
+      {!isLoading && !isError && boardList.length > 0 && filteredBoards.length === 0 && (
+        <div
+          data-testid="board-list-no-matches"
+          className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border bg-card/40 p-8 text-center"
+        >
+          <p className="text-sm font-medium text-foreground">No matching boards found</p>
+          <p className="mt-1 text-xs text-muted-foreground">Try adjusting your search query or status filter.</p>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setBoardSearch("");
+              setStatusFilter("all");
+            }}
+            className="mt-3 text-xs"
+          >
+            Clear filters
+          </Button>
+        </div>
+      )}
+
+      {/* Board Cards Grid */}
+      {!isLoading && !isError && filteredBoards.length > 0 && (
         <div
           data-testid="board-list-grid"
           className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3"
         >
-          {boardList.map(board => (
+          {filteredBoards.map(board => (
             <BoardCard key={board.id} board={board} orgId={orgId} />
           ))}
         </div>

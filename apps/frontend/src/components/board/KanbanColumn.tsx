@@ -89,10 +89,12 @@ export function KanbanColumn({
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
 
   const cardCount = section.issues?.length ?? 0;
+  const rawSection = allSections?.find(s => s.id === section.id);
+  const totalCardCount = rawSection?.issues ? rawSection.issues.length : cardCount;
   const isWipExceeded =
     section.wipLimit !== null &&
     section.wipLimit !== undefined &&
-    cardCount > section.wipLimit;
+    totalCardCount > section.wipLimit;
 
   // Defensive sorting of issues by position, createdAt, id
   const sortedIssues = [...(section.issues || [])].sort((a, b) => {
@@ -126,7 +128,7 @@ export function KanbanColumn({
         style={style}
         data-testid={`column-${section.id}`}
         className={cn(
-          "w-72 shrink-0 rounded-xl border bg-card/90 shadow-sm p-4 flex flex-col gap-3 transition-colors",
+          "w-[82vw] sm:w-72 shrink-0 rounded-xl border bg-card/90 shadow-sm p-4 flex flex-col gap-3 transition-colors",
           isWipExceeded
             ? "border-destructive/60 bg-destructive/5 ring-1 ring-destructive/20"
             : "border-border/80",
@@ -160,16 +162,16 @@ export function KanbanColumn({
               <span
                 data-testid="wip-limit-warning"
                 className="text-xs font-semibold px-2 py-0.5 rounded bg-destructive/15 text-destructive border border-destructive/30 flex items-center gap-1 shrink-0"
-                title={`WIP Limit exceeded (${cardCount} / ${section.wipLimit})`}
+                title={`WIP Limit exceeded (${totalCardCount} / ${section.wipLimit})`}
               >
                 <AlertTriangle className="h-3 w-3 shrink-0" />
                 <span>
-                  {cardCount} / {section.wipLimit}
+                  {cardCount !== totalCardCount ? `${cardCount}/${totalCardCount}` : totalCardCount} / {section.wipLimit}
                 </span>
               </span>
             ) : (
               <span className="text-xs text-muted-foreground px-1.5 py-0.5 rounded-full bg-secondary shrink-0">
-                {cardCount}
+                {cardCount !== totalCardCount ? `${cardCount}/${totalCardCount}` : cardCount}
                 {section.wipLimit !== null && section.wipLimit !== undefined
                   ? ` / ${section.wipLimit}`
                   : ""}

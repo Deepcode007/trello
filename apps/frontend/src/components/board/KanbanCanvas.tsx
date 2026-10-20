@@ -1,14 +1,24 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { Plus, Kanban, AlertCircle, X } from "lucide-react";
 import { Button } from "../ui/button";
 import { KanbanColumn } from "./KanbanColumn";
 import { KanbanCard } from "./KanbanCard";
 import { CreateColumnModal } from "./CreateColumnModal";
+import { BoardFilterBar } from "./BoardFilterBar";
 import { useRole } from "../../hooks/useRole";
+import { useAuthStore } from "../../store/useAuthStore";
 import { useMoveIssueMutation, useUpdateSectionMutation } from "../../hooks/useKanbanQueries";
 import { getKanbanErrorMessage } from "../../lib/kanban-api";
 import { calculateDropPosition } from "../../lib/dnd-math";
 import type { BoardDetail, BoardSection, BoardIssue } from "../../lib/board-api";
+import {
+  type BoardFilterState,
+  DEFAULT_BOARD_FILTERS,
+  filterBoardSections,
+  extractAvailableLabels,
+  extractAvailableAssignees,
+  computeFilterSummaryStats
+} from "../../lib/board-filters";
 import {
   DndContext,
   DragOverlay,
@@ -37,7 +47,6 @@ export function KanbanCanvas({ board, onSelectCard }: KanbanCanvasProps) {
   const [dndError, setDndError] = useState<string | null>(null);
 
   // Active drag tracking
-  const [activeId, setActiveId] = useState<string | null>(null);
   const [activeType, setActiveType] = useState<"card" | "column" | null>(null);
   const [activeCard, setActiveCard] = useState<BoardIssue | null>(null);
   const [activeColumn, setActiveColumn] = useState<BoardSection | null>(null);
@@ -57,16 +66,44 @@ export function KanbanCanvas({ board, onSelectCard }: KanbanCanvasProps) {
   const sensors = useSensors(pointerSensor, keyboardSensor);
 
   // Fallback to empty array if section is missing or null
-  const sections = board.section || [];
+  const sections = useMemo(() => board.section || [], [board.section]);
 
   // Defensive sorting of columns by position: asc, createdAt: asc, id: asc
-  const sortedSections = [...sections].sort((a, b) => {
-    if (a.position !== b.position) return a.position - b.position;
-    const aCreated = (a as unknown as { createdAt?: string }).createdAt || "";
-    const bCreated = (b as unknown as { createdAt?: string }).createdAt || "";
-    if (aCreated && bCreated) return aCreated.localeCompare(bCreated);
-    return a.id.localeCompare(b.id);
-  });
+  // and issues inside each column by position: asc, createdAt: asc, id: asc
+  const sortedSections = useMemo(() => {
+    return [...sections]
+      .sort((a, b) => {
+        if (a.position !== b.position) return a.position - b.position;
+        const aCreated = (a as unknown as { createdAt?: string }).createdAt || "";
+        const bCreated = (b as unknown as { createdAt?: string }).createdAt || "";
+        if (aCreated && bCreated) return aCreated.localeCompare(bCreated);
+        return a.id.localeCompare(b.id);
+      })
+      .map(sec => ({
+        ...sec,
+        issues: [...(sec.issues || [])].sort((a, b) => {
+          if (a.position !== b.position) return a.position - b.position;
+          if (a.createdAt && b.createdAt) return a.createdAt.localeCompare(b.createdAt);
+          return a.id.localeCompare(b.id);
+        })
+      }));
+  }, [sections]);
+
+  const currentUser = useAuthStore(s => s.user);
+  const [filters, setFilters] = useState<BoardFilterState>(DEFAULT_BOARD_FILTERS);
+
+  const availableLabels = useMemo(() => extractAvailableLabels(sections), [sections]);
+  const availableAssignees = useMemo(() => extractAvailableAssignees(sections), [sections]);
+
+  const filteredSections = useMemo(
+    () => filterBoardSections(sortedSections, filters, currentUser?.id),
+    [sortedSections, filters, currentUser?.id]
+  );
+
+  const { totalCards, matchingCards } = useMemo(
+    () => computeFilterSummaryStats(sortedSections, filteredSections),
+    [sortedSections, filteredSections]
+  );
 
   const handleDragStart = (event: DragStartEvent) => {
     const { active } = event;
@@ -75,17 +112,14 @@ export function KanbanCanvas({ board, onSelectCard }: KanbanCanvasProps) {
 
     if (data?.type === "card") {
       setActiveType("card");
-      setActiveId(String(active.id));
       setActiveCard(data.issue as BoardIssue);
     } else if (data?.type === "column") {
       setActiveType("column");
-      setActiveId(String(active.id));
       setActiveColumn(data.section as BoardSection);
     }
   };
 
   const handleDragCancel = () => {
-    setActiveId(null);
     setActiveType(null);
     setActiveCard(null);
     setActiveColumn(null);
@@ -95,7 +129,6 @@ export function KanbanCanvas({ board, onSelectCard }: KanbanCanvasProps) {
     const { active, over } = event;
 
     // Reset active overlay state
-    setActiveId(null);
     setActiveType(null);
     setActiveCard(null);
     setActiveColumn(null);
@@ -218,6 +251,18 @@ export function KanbanCanvas({ board, onSelectCard }: KanbanCanvasProps) {
         </div>
       )}
 
+      {/* Board Filter Bar */}
+      {sortedSections.length > 0 && (
+        <BoardFilterBar
+          filters={filters}
+          onFiltersChange={setFilters}
+          availableLabels={availableLabels}
+          availableAssignees={availableAssignees}
+          totalCardsCount={totalCards}
+          matchingCardsCount={matchingCards}
+        />
+      )}
+
       <DndContext
         sensors={sensors}
         collisionDetection={closestCorners}
@@ -226,7 +271,7 @@ export function KanbanCanvas({ board, onSelectCard }: KanbanCanvasProps) {
         onDragCancel={handleDragCancel}
       >
         <main
-          className="flex-1 overflow-x-auto p-6 flex gap-4 min-h-[500px] bg-secondary/10"
+          className="flex-1 overflow-x-auto p-4 sm:p-6 flex gap-4 min-h-[500px] bg-secondary/10 touch-pan-x scroll-smooth"
           data-testid="board-canvas-viewport"
           aria-label="Kanban Canvas"
         >
@@ -235,7 +280,7 @@ export function KanbanCanvas({ board, onSelectCard }: KanbanCanvasProps) {
               items={sortedSections.map(s => s.id)}
               strategy={horizontalListSortingStrategy}
             >
-              {sortedSections.map(section => (
+              {filteredSections.map(section => (
                 <KanbanColumn
                   key={section.id}
                   section={section}
@@ -248,7 +293,7 @@ export function KanbanCanvas({ board, onSelectCard }: KanbanCanvasProps) {
 
               {/* Add Column Button at the end of canvas */}
               {canEditBoard && (
-                <div className="w-72 shrink-0">
+                <div className="w-[82vw] sm:w-72 shrink-0">
                   <Button
                     variant="outline"
                     onClick={() => setIsCreateModalOpen(true)}
@@ -298,7 +343,7 @@ export function KanbanCanvas({ board, onSelectCard }: KanbanCanvasProps) {
             </div>
           )}
           {activeType === "column" && activeColumn && (
-            <div className="w-72 pointer-events-none opacity-90 shadow-2xl">
+            <div className="w-[82vw] sm:w-72 pointer-events-none opacity-90 shadow-2xl">
               <KanbanColumn
                 section={activeColumn}
                 boardId={board.id}
