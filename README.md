@@ -13,12 +13,16 @@ Designed for agile teams and organizations, this platform provides hierarchical 
 | **Runtime & Package Manager** | [Bun](https://bun.com/) (v1.3+ / v1.4+)                                                                     |
 | **Monorepo Engine**           | [Turborepo](https://turbo.build/repo) (v2)                                                                  |
 | **Language**                  | [TypeScript](https://www.typescriptlang.org/) (Strict typing across all workspaces)                         |
+| **Frontend Framework**        | [React 19](https://react.dev/) + [Vite](https://vite.dev/) (High-performance SPA)                           |
+| **Frontend State & Cache**    | [TanStack Query v5](https://tanstack.com/query), [Zustand](https://zustand-demo.pmnd.rs/)                    |
+| **Frontend Drag & Drop**      | [@dnd-kit](https://dndkit.com/) (`core` + `sortable`)                                                       |
+| **Frontend UI & Styling**     | [Tailwind CSS](https://tailwindcss.com/), [Radix UI Primitives](https://www.radix-ui.com/), [Lucide React](https://lucide.dev/) |
 | **Backend Framework**         | [Express 5](https://expressjs.com/) on Bun runtime                                                          |
 | **Real-Time Engine**          | Native [Bun WebSockets](https://bun.com/docs/api/websockets) (Pub/Sub topics, room subscriptions, presence) |
 | **Database & ORM**            | [PostgreSQL](https://www.postgresql.org/) with [Prisma ORM](https://www.prisma.io/) (`@prisma/adapter-pg`)  |
 | **Authentication & Security** | JWT (`jsonwebtoken`), `bcrypt` password hashing, Role-Based Access Control (RBAC)                           |
 | **Validation**                | [Zod](https://zod.dev/) schema validation for requests and environment configurations                       |
-| **Testing**                   | Bun Test runner (`bun:test`), Supertest, custom integration & unit test suites                              |
+| **Testing**                   | Bun Test runner (`bun:test`), Supertest, custom integration, component & unit test suites (799 tests)        |
 
 ---
 
@@ -44,6 +48,16 @@ Designed for agile teams and organizations, this platform provides hierarchical 
 - **RESTful Card Aliases**: Full support for `/api/cards/*` routes alongside `/api/issues/*`.
 - **Deduplicated Team Assignments**: Assign and unassign single or multiple team members to any card (`issue_mapping`) with automatic recipient deduplication.
 - **Labels & Checklists**: Full support for board-scoped labels (`/api/boards/:boardId/labels`, card label attachments) and nested checklists with subtask items (`/api/issues/:issueId/checklists`).
+
+### 🖥️ Modern React 19 Frontend SPA (`apps/frontend`)
+
+- **Interactive Kanban Canvas**: Fluid drag-and-drop powered by `@dnd-kit` with midpoint position calculations (`dnd-math.ts`) for cards and columns, elevated drag overlays, droppable empty column placeholders, and optimistic updates with automatic rollback on mutation failure.
+- **Real-Time WebSocket State Synchronization**: `useBoardSocket` hooks subscribe to board rooms, live presence stacks display collaborator avatars, and a synchronous in-memory event reducer updates TanStack Query caches instantly for moves, edits, labels, checklists, and comments. Sequence-based catch-up (`/events?sinceSeq=...`) guarantees seamless recovery after disconnects.
+- **Multi-Criteria Board Search & Filtering**: Fast client-side filtering across text query (title/description), priority level, assignee (`all`, `me`, `unassigned`, or specific user), labels, and due date urgency. Displays active filter metrics and matching/total card ratios while keeping column WIP limit warnings calculated against total column cards so active filters never mask WIP limit violations.
+- **Timezone-Safe Due Date Urgency System**: Custom parser (`parseDateParts`) handles calendar-only dates and midnight UTC ISO strings without premature overdue alerts on the due date or negative-timezone day shifts. Dynamically renders urgency badges (`overdue`, `due-today`, `due-soon`, `upcoming`, and `normal`).
+- **Theme & Dark Mode Engine**: Persistent theme store (`light`, `dark`, `system`) with multi-tab storage synchronization, system preference change listeners, and an inline `<head>` script in `index.html` preventing flash of unstyled content (FOUC).
+- **Responsive Mobile Layout**: Mobile navigation hamburger drawer, collapsible mobile board filter drawer, responsive column widths (`w-[82vw] sm:w-72`), and smooth horizontal touch-scrolling canvas.
+- **Safety & Modal Guardrails**: Guarded column deletion requiring issue reassignment when cards exist, destination column selection stability against background query refetches, and rich card detail modal (checklists with completion ratios, label picker, and threaded discussion tree).
 
 ### ⚡ Real-Time Collaboration & Presence (WebSockets)
 
@@ -85,7 +99,7 @@ trello/
 │   │   │   ├── routes/        # Express route definitions (with card & section aliases)
 │   │   │   ├── services/      # WebSocketBroadcaster & Transactional Outbox Worker
 │   │   │   └── types/         # TypeScript environment and entity typings
-│   │   └── tests/             # Integration & unit test suites (181+ unit tests)
+│   │   └── tests/             # Integration & unit test suites (179 unit tests)
 │   │
 │   ├── websockets/            # Native Bun WebSocket collaborative server
 │   │   ├── src/
@@ -93,10 +107,18 @@ trello/
 │   │   │   ├── server/        # Bun.serve WebSocket server, upgrade handlers, heartbeat & close hooks
 │   │   │   ├── services/      # Broadcaster singleton, in-memory membership cache, & IPC handler
 │   │   │   └── types/         # Client actions, server events, & payload interfaces
-│   │   ├── tests/             # WebSocket test suites (103+ tests across auth, pub/sub, heartbeat, upgrade)
+│   │   ├── tests/             # WebSocket test suites (128 tests across auth, pub/sub, heartbeat, upgrade)
 │   │   └── index.ts           # WebSocket entrypoint & HTTP broadcast listener
 │   │
-│   └── frontend/              # Kanban web application interface (in progress)
+│   └── frontend/              # High-performance React 19 + Vite Kanban SPA
+│       ├── src/
+│       │   ├── components/    # Board canvas, columns, cards, filter bar, modals, UI primitives
+│       │   ├── hooks/         # useBoardSocket, useRole, useToast, API mutation hooks
+│       │   ├── lib/           # board-filters, date-urgency, dnd-math, kanban-api, org-api
+│       │   ├── pages/         # BoardCanvasPage, BoardsPage, LoginPage, SignupPage
+│       │   ├── store/         # useAuthStore, useOrgStore, useThemeStore (Zustand)
+│       │   └── tests/         # Unit, component, optimistic rollback, & adversarial suites (492 tests)
+│       └── index.html         # SPA entrypoint with FOUC prevention script
 │
 ├── packages/
 │   ├── db/                    # Prisma schema, migrations, and PostgreSQL client
@@ -518,6 +540,14 @@ Run each command in its own terminal. Configure both apps with matching `jwt_key
 
 This works whether the two processes are on the same machine or separate machines; the URL and network access are the difference.
 
+### 🛡️ Outbox Delivery Resilience & Offline Fail-Safety
+
+In production, network boundaries and service lifecycles can decouple:
+- **Startup Race Conditions & Restarts**: When backend containers boot before the WebSocket service, or during rolling updates and transient network partitions, the WebSocket HTTP bridge may be temporarily unreachable.
+- **Graceful Fail-Safe Delivery**: `WebSocketBroadcaster.broadcast()` catches connection and transport errors cleanly without throwing unhandled exceptions or crashing the backend process. Local in-process `EventEmitter` listeners still receive the broadcast (`emitted = true`), and the method returns `false`.
+- **Transactional Outbox Coordination**: The transactional outbox worker explicitly checks this `false` return value. Rather than dropping the event or assuming delivery, it retains the event in `published: false` status, allowing the background lease worker to reliably retry delivery via `retryPendingEvents()` once the WebSocket service is back online.
+- **Port Override Precedence for Test & Multi-Instance Isolation**: Calling `broadcaster.setPort(port)` explicitly sets `customPort = true`, guaranteeing that explicit port assignments take precedence over static `env.WS_INTERNAL_URL` defaults. This enables isolated automated testing against unused ports (e.g., verifying offline fail-safety without interference from local running dev servers) and supports custom multi-port internal routing.
+
 ---
 
 ## 📈 Scaling
@@ -534,23 +564,29 @@ One caveat: user eviction also currently uses the single WebSocket HTTP target, 
 
 ## 🧪 Testing
 
-The repository features comprehensive automated testing using Bun's native test runner (`bun:test`):
+The repository features comprehensive automated testing using Bun's native test runner (`bun:test`), totaling **799 automated tests** across all monorepo packages:
 
 ```bash
-# 1. Run all tests across the monorepo
+# 1. Run all tests across the monorepo (799 tests)
 bun run test
 
-# 2. Run WebSocket unit and integration tests (103 tests)
+# 2. Run Frontend unit, component, & adversarial tests (492 tests)
+bun test --cwd apps/frontend
+
+# 3. Run WebSocket unit and integration tests (128 tests)
 bun test --cwd apps/websockets
 
-# 3. Run Backend unit tests (helpers, middleware, Zod schemas, parity, & broadcast dispatches) (181 tests)
+# 4. Run Backend unit tests (helpers, middleware, Zod schemas, parity, & broadcast dispatches) (179 tests)
 bun test apps/backend/tests/unit
 
-# 4. Run Full Backend integration tests (requires PostgreSQL test database)
+# 5. Run Full Backend integration tests (requires PostgreSQL test database)
 bun test --cwd apps/backend
 
-# 5. Type check all monorepo packages
+# 6. Type check all monorepo packages (5 packages)
 bun run check-types
+
+# 7. Lint check across monorepo with zero-warning enforcement
+bun run lint
 ```
 
 > [!NOTE]
@@ -580,8 +616,10 @@ bun run check-types
 - [x] Real-time presence tracking (`user:joined`, `user:left`) and targeted member eviction
 - [x] Automatic WebSocket disconnect cleanup
 - [x] Inter-process event synchronization (`WebSocketBroadcaster` with HTTP bridge)
-- [x] Comprehensive test suites (103 WebSocket tests + 181 Backend unit tests = 284 unit/contract tests)
-- [ ] Next.js / React frontend UI with drag-and-drop Kanban board (`dnd-kit`)
+- [x] React 19 frontend SPA with drag-and-drop Kanban board (`dnd-kit`), optimistic updates, and WebSocket synchronization
+- [x] Multi-criteria board search, filter bar, and timezone-safe due date urgency system
+- [x] Theme engine with dark mode, system preference detection, and FOUC prevention
+- [x] Comprehensive test suites (128 WebSocket tests + 179 Backend unit tests + 492 Frontend tests = 799 tests across the monorepo)
 - [ ] GitHub webhook integration for automated card syncing
 - [ ] Card activity log and audit history
 - [ ] File attachments
