@@ -118,8 +118,19 @@ describe("Step 6: Independent Specification Test — DND Components & Accessibil
           userId: mockUserId,
           orgId: mockOrgId,
           role: "admin",
-          accepted: true
-        } as any
+          accepted: true,
+          createdAt: "2026-01-01T00:00:00Z",
+          updatedAt: "2026-01-01T00:00:00Z",
+          acceptedAt: "2026-01-01T00:00:00Z",
+          org: {
+            id: mockOrgId,
+            name: "Test Org",
+            description: "Test",
+            visible: true,
+            createdAt: "2026-01-01T00:00:00Z",
+            updatedAt: "2026-01-01T00:00:00Z"
+          }
+        }
       ]
     });
   });

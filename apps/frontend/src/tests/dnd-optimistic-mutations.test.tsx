@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, mock } from "bun:test";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { BoardDetail, BoardSection, BoardIssue } from "../lib/board-api";
+import type { BoardDetail } from "../lib/board-api";
 import { useMoveIssueMutation, useUpdateSectionMutation } from "../hooks/useKanbanQueries";
 import { kanbanApi } from "../lib/kanban-api";
 
@@ -74,8 +74,8 @@ describe("Step 6: Independent Specification Test — Optimistic Cache Updates & 
     ]
   };
 
-  let moveCardAsync: (vars: { issueId: string; sectionId: string; position?: number }) => Promise<any>;
-  let updateSectionAsync: (vars: { sectionId: string; updates: any }) => Promise<any>;
+  let moveCardAsync: (vars: { issueId: string; sectionId: string; position?: number }) => Promise<unknown>;
+  let updateSectionAsync: (vars: { sectionId: string; updates: { title?: string; wipLimit?: number | null; position?: number } }) => Promise<unknown>;
 
   function TestHarness() {
     const moveMut = useMoveIssueMutation(boardId);

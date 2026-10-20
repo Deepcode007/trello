@@ -176,7 +176,7 @@ describe("kanban-api client and error parsing", () => {
     });
 
     it("deleteSection passes targetSectionId in params and body data", async () => {
-      api.delete = mock((url: string, config: any) => {
+      api.delete = mock((url: string, config: { params?: Record<string, unknown>; data?: Record<string, unknown> }) => {
         expect(url).toBe("/api/sections/sec-with-cards");
         expect(config.params).toEqual({ targetSectionId: "sec-target" });
         expect(config.data).toEqual({ targetSectionId: "sec-target" });
@@ -360,7 +360,7 @@ describe("kanban-api client and error parsing", () => {
     });
 
     it("removeAssignment sends delete with email in data payload", async () => {
-      api.delete = mock((url: string, config: any) => {
+      api.delete = mock((url: string, config: { data?: Record<string, unknown> }) => {
         expect(url).toBe("/api/issues/iss-1/assignees/");
         expect(config.data).toEqual({ email: "alice@test.com" });
         return Promise.resolve({

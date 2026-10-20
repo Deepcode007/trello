@@ -24,6 +24,16 @@ import type {
   ListDeletedPayload
 } from "realtime";
 
+export interface CatchUpEvent {
+  sequence?: string | number | bigint;
+  eventType?: string;
+  type?: string;
+  payload?: unknown;
+  [key: string]: unknown;
+}
+
+export type IncomingSocketEvent = BroadcastEvent | CatchUpEvent;
+
 // ============================================================================
 // Fine-Grained Cache Reducer Helpers for BoardDetail
 // ============================================================================
@@ -236,9 +246,10 @@ export function useBoardSocket(boardId?: string) {
   const lastSeqRef = useRef<string | null>(null);
   const isMountedRef = useRef(true);
 
-  const handleBroadcastEvent = useCallback((event: BroadcastEvent | any) => {
+  const handleBroadcastEvent = useCallback((event: IncomingSocketEvent) => {
     if (!event) return;
-    const eventType = event.type || event.eventType;
+    const eventType = ("type" in event && typeof event.type === "string" ? event.type : undefined) ||
+      ("eventType" in event && typeof event.eventType === "string" ? event.eventType : undefined);
     if (!eventType) return;
 
     // Sequence tracking with BigInt monotonicity check
@@ -438,8 +449,19 @@ export function useBoardSocket(boardId?: string) {
       case "comment:created":
       case "comment:updated":
       case "comment:deleted": {
-        const payload = event.payload as CommentCreatedPayload | CommentUpdatedPayload | CommentDeletedPayload;
-        const targetIssueId = (payload as any)?.issueId || ((payload as any)?.comment as any)?.issueId;
+        const payload = event.payload as
+          | CommentCreatedPayload
+          | CommentUpdatedPayload
+          | CommentDeletedPayload
+          | undefined;
+        const commentObj =
+          payload && typeof payload === "object" && "comment" in payload
+            ? (payload.comment as { issueId?: string } | null | undefined)
+            : null;
+        const targetIssueId =
+          (payload && "issueId" in payload && typeof payload.issueId === "string"
+            ? payload.issueId
+            : undefined) || commentObj?.issueId;
         if (targetIssueId) {
           queryClient.invalidateQueries({ queryKey: ["comments", targetIssueId] });
         } else {

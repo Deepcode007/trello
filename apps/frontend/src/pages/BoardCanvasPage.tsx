@@ -4,7 +4,6 @@ import {
   AlertTriangle,
   ShieldAlert,
   ArrowLeft,
-  Kanban,
   FileQuestion,
   RefreshCw
 } from "lucide-react";

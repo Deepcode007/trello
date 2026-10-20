@@ -2,7 +2,6 @@ import { describe, it, expect, beforeEach, mock } from "bun:test";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { MemoryRouter } from "react-router-dom";
 import * as RealDropdownUI from "../components/ui/dropdown-menu";
 import * as RealDialogUI from "../components/ui/dialog";
 
@@ -23,11 +22,9 @@ mock.module("../components/ui/dropdown-menu", () => ({
 }));
 
 import { calculateDropPosition, DEFAULT_POSITION_OFFSET } from "../lib/dnd-math";
-import { useMoveIssueMutation, useUpdateSectionMutation } from "../hooks/useKanbanQueries";
+import { useMoveIssueMutation } from "../hooks/useKanbanQueries";
 import { kanbanApi } from "../lib/kanban-api";
-import { useOrgStore } from "../store/useOrgStore";
-import { useAuthStore } from "../store/useAuthStore";
-import type { BoardDetail, BoardSection, BoardIssue } from "../lib/board-api";
+import type { BoardDetail } from "../lib/board-api";
 
 describe("Step 6: Empirical Challenger — DND Adversarial, Concurrency & Boundary Verification", () => {
   let queryClient: QueryClient;
@@ -73,14 +70,11 @@ describe("Step 6: Empirical Challenger — DND Adversarial, Concurrency & Bounda
     ]
   });
 
-  let moveCardAsync: (vars: { issueId: string; sectionId: string; position?: number }) => Promise<any>;
-  let updateSectionAsync: (vars: { sectionId: string; updates: any }) => Promise<any>;
+  let moveCardAsync: (vars: { issueId: string; sectionId: string; position?: number }) => Promise<unknown>;
 
   function TestHarness() {
     const moveMut = useMoveIssueMutation(boardId);
-    const updateMut = useUpdateSectionMutation(boardId);
     moveCardAsync = moveMut.mutateAsync;
-    updateSectionAsync = updateMut.mutateAsync;
     return null;
   }
 

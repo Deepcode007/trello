@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { MessageSquare, CornerDownRight, Edit2, Trash2, X, Loader2 } from "lucide-react";
+import { MessageSquare, CornerDownRight, Edit2, Trash2, Loader2 } from "lucide-react";
 import { Button } from "../../ui/button";
 import { Textarea } from "../../ui/textarea";
 import { Avatar } from "../../ui/avatar";

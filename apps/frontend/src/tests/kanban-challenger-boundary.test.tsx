@@ -25,20 +25,13 @@ mock.module("../components/ui/dropdown-menu", () => ({
 
 import { KanbanCard, formatCardDate } from "../components/board/KanbanCard";
 import { KanbanColumn } from "../components/board/KanbanColumn";
-import { KanbanCanvas } from "../components/board/KanbanCanvas";
 import { DeleteColumnModal } from "../components/board/DeleteColumnModal";
-import { CreateColumnModal } from "../components/board/CreateColumnModal";
-import { EditColumnModal } from "../components/board/EditColumnModal";
-import { CardDetailModal } from "../components/board/CardDetailModal/CardDetailModal";
 import { CardCommentsSection } from "../components/board/CardDetailModal/CardCommentsSection";
-import { CardChecklistsSection } from "../components/board/CardDetailModal/CardChecklistsSection";
-import { CardLabelsSection } from "../components/board/CardDetailModal/CardLabelsSection";
-import { CardAssigneesSection } from "../components/board/CardDetailModal/CardAssigneesSection";
-import { kanbanApi, getKanbanErrorMessage, type CommentNode, type IssueDetail } from "../lib/kanban-api";
+import { kanbanApi, type CommentNode } from "../lib/kanban-api";
 import { api } from "../lib/api";
 import { useOrgStore } from "../store/useOrgStore";
 import { useAuthStore } from "../store/useAuthStore";
-import type { BoardDetail, BoardIssue, BoardSection } from "../lib/board-api";
+import type { BoardIssue, BoardSection } from "../lib/board-api";
 import type { UserOrgMembership } from "../lib/org-api";
 
 function createTestQueryClient() {

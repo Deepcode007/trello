@@ -1,7 +1,6 @@
-import { describe, it, expect, beforeEach, afterEach, mock } from "bun:test";
+import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 import { useBoardStore } from "../store/useBoardStore";
 import { useAuthStore } from "../store/useAuthStore";
-import { useBoardSocket } from "../hooks/useBoardSocket";
 import { api } from "../lib/api";
 
 // Mock WebSocket implementation for rigorous protocol testing
@@ -65,7 +64,6 @@ class MockWebSocket {
 
 const originalWebSocket = globalThis.WebSocket;
 const originalAlert = globalThis.alert;
-const originalLocation = globalThis.location;
 
 describe("Step 7 Protocol: Real-Time WebSocket Hook Lifecycle & Reconnection", () => {
   let alertMessages: string[] = [];
@@ -171,7 +169,7 @@ describe("Step 7 Protocol: Real-Time WebSocket Hook Lifecycle & Reconnection", (
           { sequence: "102", eventType: "card:created", payload: { cardData: { id: "c2" } } }
         ]
       }
-    })) as any;
+    })) as unknown as typeof api.get;
 
     try {
       const res = await api.get("/api/boards/board-123/events?sinceSeq=100");
