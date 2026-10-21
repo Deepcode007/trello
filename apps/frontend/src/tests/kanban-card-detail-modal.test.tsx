@@ -244,6 +244,52 @@ describe("R3: Card Detail Modal & Multi-Facet Entity Interactions", () => {
       expect(html).toContain('data-testid="remove-assignee-alice@test.com"');
       expect(html).toContain('data-testid="assign-member-trigger"');
     });
+
+    it("resolves and displays real names from orgMembers for assigned users and member picker", () => {
+      const client = createTestQueryClient();
+      client.setQueryData(["orgMembers", "org-1"], [
+        {
+          role: "employee",
+          accepted: true,
+          orgId: "org-1",
+          userId: "u-2",
+          user: {
+            id: "u-2",
+            name: "Robert Bob Jones",
+            username: "bob",
+            email: "bob@test.com"
+          }
+        }
+      ]);
+
+      const html = renderWithProviders(
+        <CardAssigneesSection
+          boardId="b-1"
+          orgId="org-1"
+          issueId="iss-1"
+          assignedMappings={[
+            {
+              id: "m-2",
+              userId: "u-2",
+              issueId: "iss-1",
+              user: {
+                id: "u-2",
+                username: "bob",
+                email: "bob@test.com",
+                name: "",
+                avatarUrl: null
+              }
+            }
+          ]}
+          canEdit={true}
+        />,
+        client
+      );
+
+      // Assigned chip displays resolved real name from orgMembers
+      expect(html).toContain("Robert Bob Jones");
+      expect(html).toContain('title="Robert Bob Jones"');
+    });
   });
 
   describe("Checklists Facet", () => {

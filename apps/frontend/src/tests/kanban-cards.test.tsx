@@ -252,6 +252,61 @@ describe("R2: Issue Cards Canvas Rendering & Fast Creation", () => {
       // Overflow badge (+2)
       expect(html).toContain("+2");
     });
+
+    it("renders assignee real name on card avatars and in title hover attribute", () => {
+      const issue: BoardIssue = {
+        id: "card-assignee-realnames",
+        title: "Feature with real names",
+        position: 1000,
+        priority: "medium",
+        isArchived: false,
+        boardId: "b-1",
+        sectionId: "sec-1",
+        issueMappings: [
+          { user: { id: "u-1", username: "bob_dev", email: "bob@test.com", name: "Robert Jones", avatarUrl: null } },
+          { user: { id: "u-2", username: "carol_c", email: "carol@test.com", name: "Carol Danvers", avatarUrl: null } }
+        ]
+      };
+
+      const html = renderWithProviders(<KanbanCard issue={issue} />);
+      expect(html).toContain('title="Robert Jones"');
+      expect(html).toContain('title="Carol Danvers"');
+    });
+
+    it("resolves assignee real name from orgMembers in query client when card user.name is empty", () => {
+      const client = createTestQueryClient();
+      client.setQueryData(["orgMembers", "org-dnd-123"], [
+        {
+          role: "employee",
+          accepted: true,
+          orgId: "org-dnd-123",
+          userId: "u-3",
+          user: {
+            id: "u-3",
+            name: "Eleanor Shellstrop",
+            username: "eleanor_s",
+            email: "eleanor@goodplace.test"
+          }
+        }
+      ]);
+      useOrgStore.setState({ activeOrgId: "org-dnd-123" });
+
+      const issue: BoardIssue = {
+        id: "card-resolve-orgmembers",
+        title: "Resolve from org members cache",
+        position: 1000,
+        priority: "medium",
+        isArchived: false,
+        boardId: "b-1",
+        sectionId: "sec-1",
+        issueMappings: [
+          { user: { id: "u-3", username: "eleanor_s", email: "eleanor@goodplace.test", name: "", avatarUrl: null } }
+        ]
+      };
+
+      const html = renderWithProviders(<KanbanCard issue={issue} />, client);
+      expect(html).toContain('title="Eleanor Shellstrop"');
+    });
   });
 
   describe("Column Card Ordering & Quick Card Creation", () => {

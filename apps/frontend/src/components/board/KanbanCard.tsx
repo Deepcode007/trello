@@ -6,6 +6,9 @@ import { Clock, CheckSquare } from "lucide-react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { cn } from "../../lib/utils";
+import { useQueryClient } from "@tanstack/react-query";
+import { useOrgStore } from "../../store/useOrgStore";
+import type { OrgMemberItem } from "../../lib/org-api";
 
 export interface KanbanCardProps {
   issue: BoardIssue;
@@ -18,6 +21,17 @@ import { getDueDateUrgency, formatCardDate } from "../../lib/date-urgency";
 export { formatCardDate };
 
 export function KanbanCard({ issue, onClick, isOverlay }: KanbanCardProps) {
+  const activeOrgId = useOrgStore(s => s.activeOrgId);
+  let orgMembers: OrgMemberItem[] | undefined;
+  try {
+    const queryClient = useQueryClient();
+    if (activeOrgId) {
+      orgMembers = queryClient.getQueryData<OrgMemberItem[]>(["orgMembers", activeOrgId]);
+    }
+  } catch {
+    // QueryClient context may be unavailable in isolated unit tests
+  }
+
   // Compute checklist progress
   let totalChecklistItems = 0;
   let completedChecklistItems = 0;
@@ -147,16 +161,33 @@ export function KanbanCard({ issue, onClick, isOverlay }: KanbanCardProps) {
 
           {issue.issueMappings && issue.issueMappings.length > 0 && (
             <div className="flex -space-x-1.5 ml-auto shrink-0">
-              {issue.issueMappings.slice(0, 3).map(({ user }) => (
-                <Avatar
-                  key={user.id}
-                  size="sm"
-                  name={user.name || user.username}
-                  email={user.email}
-                  src={user.avatarUrl}
-                  className="ring-2 ring-card"
-                />
-              ))}
+              {issue.issueMappings.slice(0, 3).map(({ user }) => {
+                const orgMember = orgMembers?.find(
+                  m => (user.id && (m.userId === user.id || m.user?.id === user.id)) ||
+                       (user.email && m.user?.email?.toLowerCase() === user.email.toLowerCase())
+                );
+                const isEmailLike = (val?: string) => Boolean(val && val.includes("@"));
+                const displayName = (user.name && !isEmailLike(user.name))
+                  ? user.name
+                  : (orgMember?.user?.name && !isEmailLike(orgMember.user.name))
+                    ? orgMember.user.name
+                    : (user.username && !isEmailLike(user.username))
+                      ? user.username
+                      : (orgMember?.user?.username && !isEmailLike(orgMember.user.username))
+                        ? orgMember.user.username
+                        : (user.email && user.email.includes("@") ? user.email.split("@")[0] : (user.name || user.username || "User"));
+                return (
+                  <Avatar
+                    key={user.id}
+                    size="sm"
+                    name={displayName}
+                    email={user.email}
+                    src={user.avatarUrl}
+                    title={displayName}
+                    className="ring-2 ring-card"
+                  />
+                );
+              })}
               {issue.issueMappings.length > 3 && (
                 <span className="flex h-6 w-6 items-center justify-center rounded-full bg-secondary text-[10px] font-medium text-muted-foreground ring-2 ring-card">
                   +{issue.issueMappings.length - 3}

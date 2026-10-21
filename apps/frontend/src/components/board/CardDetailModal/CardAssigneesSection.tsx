@@ -90,6 +90,22 @@ export function CardAssigneesSection({
         {assignedMappings.length > 0 ? (
           assignedMappings.map(({ user }) => {
             if (!user) return null;
+            const orgMember = orgMembers.find(
+              m => (user.id && (m.userId === user.id || m.user?.id === user.id)) ||
+                   (user.email && m.user?.email?.toLowerCase() === user.email.toLowerCase())
+            );
+            const isEmailLike = (val?: string) => Boolean(val && val.includes("@"));
+            const displayName =
+              (user.name && !isEmailLike(user.name))
+                ? user.name
+                : (orgMember?.user?.name && !isEmailLike(orgMember.user.name))
+                  ? orgMember.user.name
+                  : (user.username && !isEmailLike(user.username))
+                    ? user.username
+                    : (orgMember?.user?.username && !isEmailLike(orgMember.user.username))
+                      ? orgMember.user.username
+                      : (user.email && user.email.includes("@") ? user.email.split("@")[0] : (user.name || user.username || "Collaborator"));
+
             return (
               <div
                 key={user.id || user.email}
@@ -97,12 +113,13 @@ export function CardAssigneesSection({
               >
                 <Avatar
                   size="sm"
-                  name={user.name || user.username}
+                  name={displayName}
                   email={user.email}
                   src={user.avatarUrl}
+                  title={displayName}
                 />
-                <span className="font-medium text-foreground truncate max-w-[120px]">
-                  {user.name || user.username}
+                <span className="font-medium text-foreground truncate max-w-[120px]" title={displayName}>
+                  {displayName}
                 </span>
                 {canEdit && (
                   <button
@@ -110,7 +127,7 @@ export function CardAssigneesSection({
                     data-testid={`remove-assignee-${user.email}`}
                     onClick={() => handleRemove(user.email)}
                     className="ml-0.5 text-muted-foreground hover:text-destructive rounded-full focus:outline-none"
-                    title={`Unassign ${user.name || user.username}`}
+                    title={`Unassign ${displayName}`}
                   >
                     <X className="h-3 w-3" />
                   </button>
@@ -133,6 +150,14 @@ export function CardAssigneesSection({
             .filter(m => m.accepted)
             .map(member => {
               const isAssigned = assignedEmails.has(member.user.email);
+              const isEmailLike = (val?: string) => Boolean(val && val.includes("@"));
+              const memberDisplayName =
+                (member.user?.name && !isEmailLike(member.user.name))
+                  ? member.user.name
+                  : (member.user?.username && !isEmailLike(member.user.username))
+                    ? member.user.username
+                    : (member.user?.email && member.user.email.includes("@") ? member.user.email.split("@")[0] : "Member");
+
               return (
                 <button
                   key={member.user.email}
@@ -148,12 +173,13 @@ export function CardAssigneesSection({
                   <div className="flex items-center gap-2">
                     <Avatar
                       size="sm"
-                      name={member.user.username}
+                      name={memberDisplayName}
                       email={member.user.email}
+                      title={memberDisplayName}
                     />
                     <div>
                       <div className="font-medium text-foreground">
-                        {member.user.username}
+                        {memberDisplayName}
                       </div>
                       <div className="text-[10px] text-muted-foreground">
                         {member.user.email}

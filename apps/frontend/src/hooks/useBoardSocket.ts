@@ -221,6 +221,47 @@ export function applyBoardUpdated(board: BoardDetail, payload: BoardUpdatedPaylo
   };
 }
 
+export function processCollaboratorsFromEvent(
+  event: IncomingSocketEvent
+): Record<string, { userId: string; name?: string; email?: string; role?: string; rank?: string }> | null {
+  if (!event) return null;
+  const eventType =
+    ("type" in event && typeof event.type === "string" ? event.type : undefined) ||
+    ("eventType" in event && typeof event.eventType === "string" ? event.eventType : undefined);
+
+  if (eventType === "joined" || eventType === "presence:sync") {
+    const rawUsers =
+      (event as { users?: unknown }).users ??
+      (event as { payload?: { users?: unknown } }).payload?.users ??
+      (event as { payload?: unknown }).payload;
+    if (Array.isArray(rawUsers)) {
+      const isEmailLike = (val?: string) => Boolean(val && val.includes("@"));
+      const map: Record<string, { userId: string; name?: string; email?: string; role?: string; rank?: string }> = {};
+      for (const u of rawUsers) {
+        if (u && typeof u === "object" && "userId" in u && typeof (u as { userId: unknown }).userId === "string") {
+          const userObj = u as { userId: string; name?: string; email?: string; role?: string; rank?: string };
+          const rawName = userObj.name?.trim();
+          const cleanName =
+            (rawName && !isEmailLike(rawName))
+              ? rawName
+              : (userObj.email && userObj.email.includes("@") ? userObj.email.split("@")[0] : rawName);
+
+          const role = userObj.role || userObj.rank;
+          map[userObj.userId] = {
+            userId: userObj.userId,
+            name: cleanName,
+            email: userObj.email,
+            role,
+            rank: role
+          };
+        }
+      }
+      return map;
+    }
+  }
+  return null;
+}
+
 // ============================================================================
 // useBoardSocket Hook
 // ============================================================================
@@ -235,6 +276,7 @@ export function useBoardSocket(boardId?: string) {
     setActiveBoardId,
     addCollaborator,
     removeCollaborator,
+    setCollaborators,
     setLastSeenSequence,
     resetBoardState
   } = useBoardStore();
@@ -267,13 +309,32 @@ export function useBoardSocket(boardId?: string) {
     }
 
     switch (eventType) {
+      case "joined":
+      case "presence:sync": {
+        const map = processCollaboratorsFromEvent(event);
+        if (map) {
+          setCollaborators(map);
+        }
+        break;
+      }
+
       case "user:joined": {
-        const payload = event.payload as UserJoinedPayload;
+        const payload = event.payload as UserJoinedPayload & { role?: string; rank?: string };
         if (payload?.userId) {
+          const rawName = payload.name?.trim();
+          const isEmailLike = (val?: string) => Boolean(val && val.includes("@"));
+          const cleanName =
+            (rawName && !isEmailLike(rawName))
+              ? rawName
+              : (payload.email && payload.email.includes("@") ? payload.email.split("@")[0] : (rawName || "User"));
+
+          const role = payload.role || payload.rank;
           addCollaborator({
             userId: payload.userId,
-            name: payload.name,
-            email: payload.email
+            name: cleanName,
+            email: payload.email,
+            role,
+            rank: role
           });
         }
         break;
@@ -487,7 +548,7 @@ export function useBoardSocket(boardId?: string) {
       default:
         break;
     }
-  }, [boardId, queryClient, currentUser?.id, addCollaborator, removeCollaborator, setLastSeenSequence]);
+  }, [boardId, queryClient, currentUser?.id, addCollaborator, removeCollaborator, setCollaborators, setLastSeenSequence]);
 
   // Catch-up missed events via REST after socket reconnects
   const syncMissedEvents = useCallback(async (bId: string, sinceSeq: string) => {

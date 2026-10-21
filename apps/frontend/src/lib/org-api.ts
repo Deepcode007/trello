@@ -27,12 +27,16 @@ export interface OrgMemberItem {
   role: OrgRole;
   accepted: boolean;
   orgId: string;
+  userId?: string;
   createdAt: string;
   updatedAt: string;
   acceptedAt: string | null;
   user: {
+    id?: string;
     username: string;
+    name?: string | null;
     email: string;
+    avatarUrl?: string | null;
   };
 }
 

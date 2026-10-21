@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 import { useBoardStore } from "../store/useBoardStore";
 import { useAuthStore } from "../store/useAuthStore";
+import { processCollaboratorsFromEvent } from "../hooks/useBoardSocket";
 
 // Mock WebSocket implementation for Bun test environment
 class MockWebSocket {
@@ -77,6 +78,54 @@ describe("useBoardSocket real-time presence and event handling", () => {
     // Emulate user:left
     store.removeCollaborator("u-collab-1");
     expect(useBoardStore.getState().collaborators["u-collab-1"]).toBeUndefined();
+  });
+
+  it("populates existing connected users when receiving joined acknowledgment with users list", () => {
+    const store = useBoardStore.getState();
+
+    // Emulate joined acknowledgment carrying existing connected room users
+    const joinedMessage = {
+      type: "joined",
+      boardId: "board-123",
+      users: [
+        { userId: "usr-alice", name: "Alice Wonderland", email: "alice@example.com" },
+        { userId: "usr-bob", name: "bob@example.com", email: "bob@example.com" } // name contains email
+      ]
+    };
+
+    const map = processCollaboratorsFromEvent(joinedMessage);
+    expect(map).not.toBeNull();
+    store.setCollaborators(map!);
+
+    const collabs = useBoardStore.getState().collaborators;
+    expect(collabs["usr-alice"]).toBeDefined();
+    expect(collabs["usr-alice"]?.name).toBe("Alice Wonderland");
+    expect(collabs["usr-bob"]).toBeDefined();
+    // Verify bob's name does not contain the email address
+    expect(collabs["usr-bob"]?.name).toBe("bob");
+    expect(collabs["usr-bob"]?.name).not.toContain("@");
+  });
+
+  it("handles presence:sync event to update collaborators map", () => {
+    const store = useBoardStore.getState();
+
+    const syncMessage = {
+      type: "presence:sync",
+      payload: {
+        boardId: "board-123",
+        users: [
+          { userId: "usr-carol", name: "Carol Danvers", email: "carol@example.com" }
+        ]
+      }
+    };
+
+    const map = processCollaboratorsFromEvent(syncMessage);
+    expect(map).not.toBeNull();
+    store.setCollaborators(map!);
+
+    const collabs = useBoardStore.getState().collaborators;
+    expect(collabs["usr-carol"]?.name).toBe("Carol Danvers");
+    expect(collabs["usr-alice"]).toBeUndefined();
   });
 
   it("updates connection status during socket lifecycle", () => {

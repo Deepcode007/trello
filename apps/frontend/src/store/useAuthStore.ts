@@ -35,7 +35,7 @@ export interface AuthState
     }>;
 }
 
-export function parseJwt(token: string): { id: string; email: string; exp?: number } | null
+export function parseJwt(token: string): { id: string; email: string; name?: string; username?: string; exp?: number } | null
 {
     try
     {
@@ -64,7 +64,22 @@ export function parseJwt(token: string): { id: string; email: string; exp?: numb
 
         if (parsed.id && parsed.email)
         {
-            return { id: String(parsed.id), email: String(parsed.email), exp: parsed.exp };
+            const rawName = typeof parsed.name === "string" && parsed.name.trim()
+                ? parsed.name.trim()
+                : (typeof parsed.username === "string" && parsed.username.trim()
+                    ? parsed.username.trim()
+                    : undefined);
+            const cleanName = (rawName && !rawName.includes("@"))
+                ? rawName
+                : (typeof parsed.email === "string" && parsed.email.includes("@") ? parsed.email.split("@")[0] : rawName);
+
+            return {
+                id: String(parsed.id),
+                email: String(parsed.email),
+                name: cleanName,
+                username: typeof parsed.username === "string" ? parsed.username : cleanName,
+                exp: parsed.exp
+            };
         }
         return null;
     } catch
@@ -93,7 +108,12 @@ const initialDecoded = initialToken ? parseJwt(initialToken) : null;
 
 export const useAuthStore = create<AuthState>((set, get) => ({
     token: initialToken,
-    user: initialDecoded ? { id: initialDecoded.id, email: initialDecoded.email } : null,
+    user: initialDecoded ? {
+        id: initialDecoded.id,
+        email: initialDecoded.email,
+        name: initialDecoded.name,
+        username: initialDecoded.username
+    } : null,
     isLoading: Boolean(initialToken),
 
     setToken: (token: string) =>
@@ -115,7 +135,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         }
         set({
             token,
-            user: { id: decoded.id, email: decoded.email }
+            user: {
+                id: decoded.id,
+                email: decoded.email,
+                name: decoded.name,
+                username: decoded.username
+            }
         });
     },
 

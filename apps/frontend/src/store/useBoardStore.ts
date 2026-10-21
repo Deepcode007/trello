@@ -6,6 +6,8 @@ export interface Collaborator {
   userId: string;
   name?: string;
   email?: string;
+  role?: string;
+  rank?: string;
 }
 
 export interface BoardRealtimeState {

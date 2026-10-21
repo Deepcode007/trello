@@ -183,10 +183,11 @@ describe("Board UI Components", () => {
       expect(html).toContain("background-color:#8b5cf6");
     });
 
-    it("renders collaborator presence avatar stack including current user", () => {
+    it("renders collaborator presence avatar stack including current user and displays user name on hover", () => {
       useBoardStore.setState({
         collaborators: {
-          "u-2": { userId: "u-2", name: "Bob Jones", email: "bob@example.com" }
+          "u-2": { userId: "u-2", name: "Bob Jones", email: "bob@example.com" },
+          "u-3": { userId: "u-3", name: "carol@example.com", email: "carol@example.com" }
         }
       });
 
@@ -194,6 +195,11 @@ describe("Board UI Components", () => {
       expect(html).toContain("collaborator-avatar-stack");
       expect(html).toContain("collaborator-avatar-u-1");
       expect(html).toContain("collaborator-avatar-u-2");
+      expect(html).toContain("collaborator-avatar-u-3");
+      expect(html).toContain('title="Bob Jones"');
+      // Verify hover title shows user name ("carol") and never the full email
+      expect(html).toContain('title="carol"');
+      expect(html).not.toContain('title="carol@example.com"');
     });
 
     it("displays overflow badge when active collaborators exceed 5", () => {

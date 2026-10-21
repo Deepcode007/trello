@@ -55,6 +55,10 @@ export function Avatar({ name, email, src, size = "md", className, ...props }: A
   const seed = email || name || "user";
   const initials = getInitials(name, email);
   const bgColor = getColor(seed);
+  const isEmailLike = (val?: string) => Boolean(val && val.includes("@"));
+  const defaultTitle = (name && !isEmailLike(name))
+    ? name
+    : (email && email.includes("@") ? email.split("@")[0] : (name || "User"));
 
   return (
     <div
@@ -64,7 +68,7 @@ export function Avatar({ name, email, src, size = "md", className, ...props }: A
         bgColor,
         className
       )}
-      title={name || email}
+      title={defaultTitle}
       {...props}
     >
       {src && !imgError ? (
