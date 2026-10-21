@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "bun --watch index.ts",
     "test": "bun test --isolate",
-    "check-types": "tsc --noEmit"
+    "check-types": "tsc --noEmit",
+    "build": "bun build index.ts --target=bun --outfile=./dist/index.js",
+    "start": "bun run ./dist/index.js"
   },
   "devDependencies": {
     "@types/bun": "latest",

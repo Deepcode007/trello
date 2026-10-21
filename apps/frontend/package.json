@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
+    "start": "vite preview",
     "check-types": "tsc --noEmit",
     "lint": "eslint . --max-warnings 0",
     "test": "bun test --isolate"
