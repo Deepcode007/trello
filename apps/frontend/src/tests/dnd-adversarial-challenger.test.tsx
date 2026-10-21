@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, mock } from "bun:test";
+import { describe, it, expect, beforeEach, afterEach, mock } from "bun:test";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -29,6 +29,11 @@ import type { BoardDetail } from "../lib/board-api";
 describe("Step 6: Empirical Challenger — DND Adversarial, Concurrency & Boundary Verification", () => {
   let queryClient: QueryClient;
   const boardId = "board-challenger-999";
+  const originalMoveIssue = kanbanApi.moveIssue;
+
+  afterEach(() => {
+    kanbanApi.moveIssue = originalMoveIssue;
+  });
 
   const buildStressBoard = (): BoardDetail => ({
     id: boardId,

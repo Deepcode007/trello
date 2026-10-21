@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "check-types": "tsc --noEmit",
     "lint": "eslint . --max-warnings 0",
-    "test": "bun test"
+    "test": "bun test --isolate"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

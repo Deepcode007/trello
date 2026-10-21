@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, mock } from "bun:test";
+import { describe, it, expect, beforeEach, afterEach, mock } from "bun:test";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -9,6 +9,13 @@ import { kanbanApi } from "../lib/kanban-api";
 describe("Step 6: Independent Specification Test — Optimistic Cache Updates & Error Rollback", () => {
   let queryClient: QueryClient;
   const boardId = "board-123";
+  const originalMoveIssue = kanbanApi.moveIssue;
+  const originalUpdateSection = kanbanApi.updateSection;
+
+  afterEach(() => {
+    kanbanApi.moveIssue = originalMoveIssue;
+    kanbanApi.updateSection = originalUpdateSection;
+  });
 
   const initialMockBoard: BoardDetail = {
     id: boardId,
