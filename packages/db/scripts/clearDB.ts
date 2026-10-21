@@ -1,9 +1,8 @@
-// packages/db/scripts/clear-db.ts
 import { Client } from "pg";
+import { env } from "../env";
 
 const TEST_DB_NAME = "trello_test";
-const PG_BASE_URL = "postgresql://deep@localhost:5432";
-const TEST_DB_URL = `${PG_BASE_URL}/${TEST_DB_NAME}`;
+const TEST_DB_URL = (env.RUN_DB_TESTS === "1" ? env.DATABASE_TEST_URL : env.DATABASE_URL);
 
 async function clearTestDatabase()
 {

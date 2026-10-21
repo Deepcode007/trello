@@ -1,5 +1,6 @@
 import type { Server, ServerWebSocket } from "bun";
 import { prisma } from "db/prisma";
+import jwt from "jsonwebtoken";
 import { authenticateRequest, extractSubprotocol } from "./auth/authUpgrade";
 import { wsBroadcaster } from "./services/broadcaster";
 import
@@ -458,7 +459,7 @@ export async function evictUserSockets(
 export function handleUpgradeRequest(
     req: Request,
     server: Pick<Server<WebSocketData>, "upgrade" | "publish" | "port">,
-    jwtSecret: string
+    jwtSecret: string | jwt.Secret
 ): Promise<Response | undefined> | Response | undefined
 {
     const url = new URL(req.url);
@@ -1054,8 +1055,8 @@ export function stopHeartbeat(server?: Pick<Server<WebSocketData>, "publish"> | 
 
 export function createWebSocketServer(options: WebSocketServerOptions = {}): Server<WebSocketData>
 {
-    const port = options.port ?? Number(process.env.ws_port || env.ws_port);
-    const jwtSecret = options.jwtSecret ?? (process.env.jwt_key || process.env.JWT_SECRET);
+    const port = options.port ?? env.ws_port;
+    const jwtSecret = options.jwtSecret ?? env.jwt_key;
     if (!jwtSecret)
     {
         throw new Error("JWT secret must be configured for WebSocket server via options.jwtSecret or the validated jwt_key environment setting");

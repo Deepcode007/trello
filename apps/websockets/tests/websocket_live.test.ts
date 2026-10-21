@@ -12,6 +12,7 @@ import {
 } from "../src/server";
 import { cleanBoardId } from "realtime";
 import { wsBroadcaster } from "../src/services/broadcaster";
+import { env } from "../src/env";
 
 interface TestClient {
     ws: WebSocket;
@@ -21,7 +22,11 @@ interface TestClient {
     close(code?: number, reason?: string): Promise<{ code: number; reason: string }>;
 }
 
-const JWT_SECRET = "ws-live-integration-test-secret-key-32chars";
+const JWT_SECRET = env.INTERNAL_BROADCAST_SECRET;
+if (!JWT_SECRET)
+{
+    throw new Error("Internal JWT Secret not configured");
+}    
 
 describe("Live WebSocket Client-Server Integration Tests (Unmocked)", () => {
     let server: ReturnType<typeof createWebSocketServer>;

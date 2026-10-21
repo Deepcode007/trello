@@ -3,12 +3,14 @@
 import { defineConfig } from "prisma/config";
 import { env } from "./env";
 
+const test = (process.env.RUN_DB_TESTS === "1" ? true : false);
+console.log(process.env.RUN_DB_TESTS, test);
 export default defineConfig({
     schema: "prisma/schema.prisma",
     migrations: {
         path: "prisma/migrations",
     },
     datasource: {
-        url: env.DATABASE_URL,
+        url: (test ? process.env.DATABASE_TEST_URL : env.DATABASE_URL),
     },
 });

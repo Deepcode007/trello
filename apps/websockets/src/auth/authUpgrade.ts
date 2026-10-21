@@ -117,7 +117,7 @@ export function extractToken(req: Request): string | null
     return null;
 }
 
-export function authenticateRequest(req: Request, jwtSecret: string): AuthenticatedUser | null
+export function authenticateRequest(req: Request, jwtSecret: string | jwt.Secret): AuthenticatedUser | null
 {
     const token = extractToken(req);
     if (!token) return null;
