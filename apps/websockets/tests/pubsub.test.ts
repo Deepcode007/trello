@@ -139,7 +139,7 @@ describe("Native Pub/Sub & Board Room Management Tests", () =>
             expect(payload.email).toBe("alice@example.com");
         }
 
-        // Case 2: ws.data.name is undefined - falls back to ws.data.email, client-supplied name ignored
+        // Case 2: ws.data.name is undefined - falls back to clean name derived from email prefix, client-supplied name ignored
         {
             const ws = createMockSocket("user_102", "bob@example.com", undefined);
             const server = createMockServer();
@@ -153,7 +153,8 @@ describe("Native Pub/Sub & Board Room Management Tests", () =>
             const published = server.getPublishedEvents();
             expect(published.length).toBe(1);
             const payload = JSON.parse(published[0]!.message).payload;
-            expect(payload.name).toBe("bob@example.com");
+            expect(payload.name).toBe("bob");
+            expect(payload.name).not.toBe("bob@example.com");
             expect(payload.userId).toBe("user_102");
         }
 
@@ -195,7 +196,7 @@ describe("Native Pub/Sub & Board Room Management Tests", () =>
             expect(payload.email).toBe("sub_user@example.com");
         }
 
-        // Case 5: ws.data.name is empty string - falls back to ws.data.email
+        // Case 5: ws.data.name is empty string - falls back to clean name derived from email prefix
         {
             const ws = createMockSocket("user_105", "empty_name@example.com", "");
             const server = createMockServer();
@@ -209,7 +210,8 @@ describe("Native Pub/Sub & Board Room Management Tests", () =>
             const published = server.getPublishedEvents();
             expect(published.length).toBe(1);
             const payload = JSON.parse(published[0]!.message).payload;
-            expect(payload.name).toBe("empty_name@example.com");
+            expect(payload.name).toBe("empty_name");
+            expect(payload.name).not.toBe("empty_name@example.com");
             expect(payload.userId).toBe("user_105");
         }
     });
@@ -698,5 +700,206 @@ describe("Native Pub/Sub & Board Room Management Tests", () =>
     {
         expect(await defaultCheckBoardAccess("", "board_1")).toBe(false);
         expect(await defaultCheckBoardAccess("user_1", "")).toBe(false);
+    });
+
+    it("includes all existing connected room users in joined message when a new user joins", () =>
+    {
+        // 1. Existing user Alice is already connected and subscribed to board_room_1
+        const wsAlice = createMockSocket("user_alice_1", "alice@example.com", "Alice Smith");
+        wsAlice.data.subscriptions.add("board_room_1");
+        const aliceSet = new Set<any>([wsAlice]);
+        const { userSocketRegistry, getBoardRoomUsers } = require("../src/server");
+        userSocketRegistry.set("user_alice_1", aliceSet);
+
+        try
+        {
+            // Verify getBoardRoomUsers finds Alice in board_room_1
+            const roomUsers = getBoardRoomUsers("board_room_1");
+            expect(roomUsers.length).toBe(1);
+            expect(roomUsers[0].userId).toBe("user_alice_1");
+            expect(roomUsers[0].name).toBe("Alice Smith");
+
+            // 2. New user Bob joins board_room_1
+            const wsBob = createMockSocket("user_bob_2", "bob@example.com", "Bob Jones");
+            const server = createMockServer();
+
+            handleWebSocketMessage(wsBob, server, JSON.stringify({
+                action: "join",
+                boardId: "board_room_1"
+            }));
+
+            // 3. Bob receives joined confirmation containing existing users (Alice) + Bob
+            const sent = wsBob.getSentMessages();
+            expect(sent.length).toBe(1);
+            const ack = JSON.parse(sent[0]!);
+            expect(ack.type).toBe("joined");
+            expect(ack.boardId).toBe("board_room_1");
+            expect(Array.isArray(ack.users)).toBe(true);
+
+            const userIds = ack.users.map((u: any) => u.userId);
+            expect(userIds).toContain("user_alice_1");
+            expect(userIds).toContain("user_bob_2");
+
+            const aliceInAck = ack.users.find((u: any) => u.userId === "user_alice_1");
+            expect(aliceInAck.name).toBe("Alice Smith");
+
+            // 4. Room receives Bob's user:joined broadcast with Bob's name (not email)
+            const published = server.getPublishedEvents();
+            expect(published.length).toBe(1);
+            const joinPayload = JSON.parse(published[0]!.message).payload;
+            expect(joinPayload.type || joinPayload.boardId).toBeDefined();
+            expect(joinPayload.name).toBe("Bob Jones");
+            expect(joinPayload.email).toBe("bob@example.com");
+            expect(joinPayload.name).not.toBe("bob@example.com");
+        }
+        finally
+        {
+            userSocketRegistry.delete("user_alice_1");
+        }
+    });
+
+    it("ensures socket payloads for users without explicit name never set name to email", () =>
+    {
+        // User with no explicit name (undefined name, or name matching email)
+        const wsCharlie = createMockSocket("user_charlie_3", "charlie@example.com", undefined);
+        const server = createMockServer();
+
+        handleWebSocketMessage(wsCharlie, server, JSON.stringify({
+            action: "join",
+            boardId: "board_room_2"
+        }));
+
+        const sent = wsCharlie.getSentMessages();
+        expect(sent.length).toBe(1);
+        const ack = JSON.parse(sent[0]!);
+        expect(ack.type).toBe("joined");
+        expect(ack.users[0].name).toBe("charlie");
+        expect(ack.users[0].name).not.toContain("@");
+
+        const published = server.getPublishedEvents();
+        expect(published.length).toBe(1);
+        const joinPayload = JSON.parse(published[0]!.message).payload;
+        expect(joinPayload.name).toBe("charlie");
+        expect(joinPayload.name).not.toBe("charlie@example.com");
+        expect(joinPayload.name).not.toContain("@");
+    });
+
+    it("suppresses user:left broadcast when user disconnects one socket but still has another tab subscribed", () =>
+    {
+        const { userSocketRegistry, handleWebSocketClose } = require("../src/server");
+        const server = createMockServer();
+
+        const wsTab1 = createMockSocket("user_multi_1", "multi@example.com", "Multi User");
+        const wsTab2 = createMockSocket("user_multi_1", "multi@example.com", "Multi User");
+
+        wsTab1.data.subscriptions.add("board_room_multi");
+        wsTab2.data.subscriptions.add("board_room_multi");
+
+        userSocketRegistry.set("user_multi_1", new Set([wsTab1, wsTab2]));
+
+        try
+        {
+            // Close Tab 1: user_multi_1 is still subscribed via Tab 2
+            handleWebSocketClose(wsTab1, server);
+
+            // server.publish should NOT have emitted user:left because Tab 2 is still active
+            const published = server.getPublishedEvents();
+            expect(published.length).toBe(0);
+
+            // Close Tab 2: now user_multi_1 has no active sockets left in room
+            handleWebSocketClose(wsTab2, server);
+            expect(server.getPublishedEvents().length).toBe(1);
+            const leftPayload = JSON.parse(server.getPublishedEvents()[0]!.message).payload;
+            expect(leftPayload.userId).toBe("user_multi_1");
+            expect(leftPayload.name).toBe("Multi User");
+        }
+        finally
+        {
+            userSocketRegistry.delete("user_multi_1");
+        }
+    });
+
+    it("propagates user role and rank in joined acknowledgment and user:joined broadcast", () =>
+    {
+        const { recordUserMembership, resetMembershipRegistries } = require("../src/server");
+        resetMembershipRegistries();
+
+        try
+        {
+            // Record user membership with role "admin"
+            recordUserMembership("user_admin_1", "org_1", "board_role_1", "admin");
+
+            const wsAdmin = createMockSocket("user_admin_1", "admin@example.com", "Admin User");
+            const server = createMockServer();
+
+            handleWebSocketMessage(wsAdmin, server, JSON.stringify({
+                action: "join",
+                boardId: "board_role_1"
+            }));
+
+            // Check joined ack
+            const sent = wsAdmin.getSentMessages();
+            expect(sent.length).toBe(1);
+            const ack = JSON.parse(sent[0]!);
+            expect(ack.type).toBe("joined");
+            expect(ack.users.length).toBe(1);
+            expect(ack.users[0].name).toBe("Admin User");
+            expect(ack.users[0].email).toBe("admin@example.com");
+            expect(ack.users[0].role).toBe("admin");
+            expect(ack.users[0].rank).toBe("admin");
+
+            // Check user:joined broadcast
+            const published = server.getPublishedEvents();
+            expect(published.length).toBe(1);
+            const joinPayload = JSON.parse(published[0]!.message).payload;
+            expect(joinPayload.name).toBe("Admin User");
+            expect(joinPayload.email).toBe("admin@example.com");
+            expect(joinPayload.role).toBe("admin");
+            expect(joinPayload.rank).toBe("admin");
+        }
+        finally
+        {
+            resetMembershipRegistries();
+        }
+    });
+
+    it("propagates DB real name via recordUserMembership to joined acknowledgment and user:joined broadcast when socket had email prefix", () =>
+    {
+        const { recordUserMembership, resetMembershipRegistries } = require("../src/server");
+        resetMembershipRegistries();
+
+        try
+        {
+            // User connected with token that only had email prefix as name
+            const wsMember = createMockSocket("user_db_1", "elizabeth@example.com", "elizabeth");
+            const server = createMockServer();
+
+            // Record DB real name "Elizabeth Bennet"
+            recordUserMembership("user_db_1", "org_pride", "board_pride_1", "employee", "Elizabeth Bennet");
+
+            handleWebSocketMessage(wsMember, server, JSON.stringify({
+                action: "join",
+                boardId: "board_pride_1"
+            }));
+
+            // Check joined ack has Elizabeth Bennet
+            const sent = wsMember.getSentMessages();
+            expect(sent.length).toBe(1);
+            const ack = JSON.parse(sent[0]!);
+            expect(ack.type).toBe("joined");
+            expect(ack.users.length).toBe(1);
+            expect(ack.users[0].name).toBe("Elizabeth Bennet");
+
+            // Check user:joined broadcast emits Elizabeth Bennet
+            const published = server.getPublishedEvents();
+            expect(published.length).toBe(1);
+            const joinPayload = JSON.parse(published[0]!.message).payload;
+            expect(joinPayload.name).toBe("Elizabeth Bennet");
+            expect(joinPayload.name).not.toBe("elizabeth");
+        }
+        finally
+        {
+            resetMembershipRegistries();
+        }
     });
 });

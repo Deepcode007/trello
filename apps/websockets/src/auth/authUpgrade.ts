@@ -5,6 +5,8 @@ export interface AuthenticatedUser
     userId: string;
     email?: string;
     name?: string;
+    role?: string;
+    rank?: string;
     payload: JwtPayload;
 }
 
@@ -131,18 +133,37 @@ export function authenticateRequest(req: Request, jwtSecret: string): Authentica
 
         const userId = String(rawUserId);
         const email = typeof decoded.email === "string" ? decoded.email : (typeof userObj?.email === "string" ? userObj.email : undefined);
-        const name = typeof decoded.name === "string"
-            ? decoded.name
-            : (typeof decoded.username === "string"
-                ? decoded.username
-                : (typeof userObj?.username === "string"
-                    ? userObj.username
+        const rawName = typeof decoded.name === "string" && decoded.name.trim()
+            ? decoded.name.trim()
+            : (typeof decoded.username === "string" && decoded.username.trim()
+                ? decoded.username.trim()
+                : (typeof userObj?.username === "string" && userObj.username.trim()
+                    ? userObj.username.trim()
                     : undefined));
+
+        const name = (rawName && !rawName.includes("@"))
+            ? rawName
+            : (email && typeof email === "string" && email.includes("@") ? email.split("@")[0] : rawName);
+
+        const role = typeof decoded.role === "string" && decoded.role.trim()
+            ? decoded.role.trim()
+            : (typeof userObj?.role === "string" && userObj.role.trim()
+                ? userObj.role.trim()
+                : (typeof decoded.rank === "string" && decoded.rank.trim()
+                    ? decoded.rank.trim()
+                    : undefined));
+        const rank = typeof decoded.rank === "string" && decoded.rank.trim()
+            ? decoded.rank.trim()
+            : (typeof userObj?.rank === "string" && userObj.rank.trim()
+                ? userObj.rank.trim()
+                : role);
 
         return {
             userId,
             email,
             name,
+            role,
+            rank,
             payload: decoded
         };
     } catch

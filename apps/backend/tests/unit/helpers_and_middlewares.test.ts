@@ -305,6 +305,36 @@ describe("Helpers, Middlewares, and Models Tests", () =>
             expect(decoded.exp!).toBeGreaterThan(decoded.iat);
         });
 
+        it("embeds user display name and username into token payload and never embeds email as name", () =>
+        {
+            const userId = crypto.randomUUID();
+
+            // Case 1: Real name provided
+            const t1 = token("alice@example.com", userId, "Alice Smith", "alicesmith");
+            const d1 = jwt.decode(t1) as any;
+            expect(d1.name).toBe("Alice Smith");
+            expect(d1.username).toBe("alicesmith");
+            expect(d1.email).toBe("alice@example.com");
+
+            // Case 2: Only username provided
+            const t2 = token("bob@example.com", userId, null, "bob_builder");
+            const d2 = jwt.decode(t2) as any;
+            expect(d2.name).toBe("bob_builder");
+            expect(d2.username).toBe("bob_builder");
+
+            // Case 3: Name mistakenly passed as email address
+            const t3 = token("carol@example.com", userId, "carol@example.com", "carol_u");
+            const d3 = jwt.decode(t3) as any;
+            expect(d3.name).toBe("carol_u");
+            expect(d3.name).not.toContain("@");
+
+            // Case 4: No name or username - falls back to email prefix
+            const t4 = token("david@example.com", userId);
+            const d4 = jwt.decode(t4) as any;
+            expect(d4.name).toBe("david");
+            expect(d4.name).not.toContain("@");
+        });
+
         it("returns 401 when token is invalid or malformed", () =>
         {
             let capturedStatus = 0;

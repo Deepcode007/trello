@@ -36,14 +36,16 @@ export async function OrgMembersHandler(req: Request, res: Response)
             }
         },
         omit: {
-            id: true,
-            userId: true
+            id: true
         },
         include: {
             user: {
                 select: {
+                    id: true,
+                    name: true,
                     username: true,
-                    email: true
+                    email: true,
+                    avatarUrl: true
                 }
             }
         }

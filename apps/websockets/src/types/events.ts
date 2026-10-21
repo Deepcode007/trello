@@ -3,6 +3,8 @@ export interface WebSocketData
     userId: string;
     email?: string;
     name?: string;
+    role?: string;
+    rank?: string;
     subscriptions: Set<string>;
     connectedAt: number;
     isAlive?: boolean;

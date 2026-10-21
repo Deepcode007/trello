@@ -20,12 +20,35 @@ export const orgMembers = new Map<string, Set<string>>();
 
 // 3. Board ID -> Org ID mapping (normalized with cleanBoardId; eliminates prisma.boards.findMany queries during eviction)
 export const boardOrgMap = new Map<string, string>();
+export const userOrgRole = new Map<string, string>();
+export const userBoardRole = new Map<string, string>();
+export const userRealName = new Map<string, string>();
 
-export function recordUserMembership(userId: string, orgId: string, boardId?: string): void
+export function recordUserMembership(userId: string, orgId: string, boardId?: string, role?: string, name?: string): void
 {
     const cleanUid = userId?.trim();
     const cleanOid = orgId?.trim();
     if (!cleanUid || !cleanOid) return;
+
+    if (name)
+    {
+        const cleanName = name.trim();
+        if (cleanName && !cleanName.includes("@"))
+        {
+            userRealName.set(cleanUid, cleanName);
+            const userSockets = userSocketRegistry.get(cleanUid);
+            if (userSockets)
+            {
+                for (const sock of userSockets)
+                {
+                    if (sock?.data)
+                    {
+                        sock.data.name = cleanName;
+                    }
+                }
+            }
+        }
+    }
 
     let orgSet = userOrgMembership.get(cleanUid);
     if (!orgSet)
@@ -49,7 +72,16 @@ export function recordUserMembership(userId: string, orgId: string, boardId?: st
         if (cleanBid)
         {
             boardOrgMap.set(cleanBid, cleanOid);
+            if (role)
+            {
+                userBoardRole.set(`${cleanUid}:${cleanBid}`, role);
+            }
         }
+    }
+
+    if (role)
+    {
+        userOrgRole.set(`${cleanUid}:${cleanOid}`, role);
     }
 }
 
@@ -58,6 +90,8 @@ export function revokeUserMembership(userId: string, orgId: string): void
     const cleanUid = userId?.trim();
     const cleanOid = orgId?.trim();
     if (!cleanUid || !cleanOid) return;
+
+    userOrgRole.delete(`${cleanUid}:${cleanOid}`);
 
     const orgSet = userOrgMembership.get(cleanUid);
     if (orgSet)
@@ -90,6 +124,7 @@ export function cleanupUserMembership(userId: string): void
     {
         for (const orgId of orgSet)
         {
+            userOrgRole.delete(`${cleanUid}:${orgId}`);
             const userSet = orgMembers.get(orgId);
             if (userSet)
             {
@@ -109,6 +144,9 @@ export function resetMembershipRegistries(): void
     userOrgMembership.clear();
     orgMembers.clear();
     boardOrgMap.clear();
+    userOrgRole.clear();
+    userBoardRole.clear();
+    userRealName.clear();
 }
 
 export async function defaultCheckBoardAccess(userId: string, boardId: string): Promise<boolean>
@@ -128,16 +166,34 @@ export async function defaultCheckBoardAccess(userId: string, boardId: string): 
                                 userId,
                                 accepted: true
                             },
-                            select: { id: true }
+                            select: {
+                                id: true,
+                                role: true,
+                                user: {
+                                    select: {
+                                        id: true,
+                                        name: true,
+                                        username: true,
+                                        email: true
+                                    }
+                                }
+                            }
                         }
                     }
                 }
             }
         });
-        const hasAccess = Boolean(board && board.org && board.org.members.length > 0);
+        const member = board?.org?.members?.[0];
+        const hasAccess = Boolean(board && board.org && member);
+        const memberRole = member?.role;
+        const memberName = (member?.user?.name && !member.user.name.includes("@"))
+            ? member.user.name.trim()
+            : (member?.user?.username && !member.user.username.includes("@")
+                ? member.user.username.trim()
+                : undefined);
         if (hasAccess && board?.orgId)
         {
-            recordUserMembership(userId, board.orgId, rawId);
+            recordUserMembership(userId, board.orgId, rawId, memberRole, memberName);
         }
         return hasAccess;
     } catch
@@ -171,6 +227,64 @@ export interface WebSocketServerOptions
 
 // Layer 2 In-Memory Connection Registry: maps authenticated userId to active sockets
 export const userSocketRegistry = new Map<string, Set<ServerWebSocket<WebSocketData>>>();
+
+export function getCleanDisplayName(wsData?: { name?: string | null; email?: string | null; userId?: string | null }): string
+{
+    if (!wsData) return "User";
+    if (wsData.userId)
+    {
+        const cleanUid = wsData.userId.trim();
+        const recorded = userRealName.get(cleanUid);
+        if (recorded && !recorded.includes("@"))
+        {
+            return recorded;
+        }
+    }
+    const rawName = wsData.name?.trim();
+    if (rawName && !rawName.includes("@"))
+    {
+        return rawName;
+    }
+    const email = wsData.email?.trim();
+    if (email && email.includes("@"))
+    {
+        return email.split("@")[0]!;
+    }
+    return rawName || wsData.userId?.trim() || "User";
+}
+
+export function getBoardRoomUsers(topic: string): Array<{ userId: string; name?: string; email?: string; role?: string; rank?: string }>
+{
+    const users: Array<{ userId: string; name?: string; email?: string; role?: string; rank?: string }> = [];
+    const seen = new Set<string>();
+    const bId = cleanBoardId(topic);
+    const orgId = bId ? boardOrgMap.get(bId) : undefined;
+
+    for (const [userId, sockets] of userSocketRegistry.entries())
+    {
+        for (const sock of sockets)
+        {
+            if (sock?.data?.subscriptions?.has(topic) && !seen.has(userId))
+            {
+                seen.add(userId);
+                const role = (bId ? userBoardRole.get(`${userId}:${bId}`) : undefined) ||
+                    (orgId ? userOrgRole.get(`${userId}:${orgId}`) : undefined) ||
+                    (sock.data as any)?.role ||
+                    (sock.data as any)?.rank;
+
+                users.push({
+                    userId,
+                    name: getCleanDisplayName(sock.data),
+                    email: sock.data?.email || undefined,
+                    role: role || undefined,
+                    rank: role || undefined
+                });
+                break;
+            }
+        }
+    }
+    return users;
+}
 
 export async function evictUserSockets(
     server: Pick<Server<WebSocketData>, "publish"> | null | undefined,
@@ -257,7 +371,7 @@ export async function evictUserSockets(
                                     type: "user:left",
                                     payload: {
                                         userId: ws.data.userId,
-                                        name: ws.data.name || ws.data.email || ws.data.userId,
+                                        name: getCleanDisplayName(ws.data),
                                         email: ws.data.email,
                                         boardId
                                     },
@@ -321,7 +435,7 @@ export async function evictUserSockets(
                                 type: "user:left",
                                 payload: {
                                     userId: ws.data.userId,
-                                    name: ws.data.name || ws.data.email || ws.data.userId,
+                                    name: getCleanDisplayName(ws.data),
                                     email: ws.data.email,
                                     boardId: cleanBoardId(topic) || topic
                                 },
@@ -489,6 +603,8 @@ export function handleUpgradeRequest(
             userId: user.userId,
             email: user.email,
             name: user.name,
+            role: user.role,
+            rank: user.rank,
             subscriptions: new Set<string>(),
             connectedAt: Date.now(),
             isAlive: true,
@@ -610,12 +726,47 @@ export async function handleWebSocketMessage(
             return;
         }
 
+        const userRole = (cleanId ? userBoardRole.get(`${ws.data.userId}:${cleanId}`) : undefined) ||
+            (cachedOrgId ? userOrgRole.get(`${ws.data.userId}:${cachedOrgId}`) : undefined) ||
+            ws.data?.role ||
+            ws.data?.rank ||
+            (ws.data as any)?.role ||
+            (ws.data as any)?.rank;
+
+        if (userRole && ws?.data)
+        {
+            ws.data.role = userRole;
+            ws.data.rank = userRole;
+            if (cleanId && ws.data.userId)
+            {
+                userBoardRole.set(`${ws.data.userId}:${cleanId}`, userRole);
+            }
+        }
+
+        const registeredName = ws.data?.userId ? userRealName.get(ws.data.userId.trim()) : undefined;
+        if (registeredName && ws?.data && (!ws.data.name || ws.data.name.includes("@") || ws.data.name === (ws.data.email?.split("@")[0])))
+        {
+            ws.data.name = registeredName;
+        }
+
         // If client is already subscribed to this room, acknowledge without re-broadcasting join event
         if (ws.data.subscriptions.has(topic))
         {
+            const currentUsers = getBoardRoomUsers(topic);
+            if (ws.data?.userId && !currentUsers.some(u => u.userId === ws.data.userId))
+            {
+                currentUsers.push({
+                    userId: ws.data.userId,
+                    name: getCleanDisplayName(ws.data),
+                    email: ws.data.email || undefined,
+                    role: userRole || undefined,
+                    rank: userRole || undefined
+                });
+            }
             ws.send(JSON.stringify({
                 type: "joined",
                 boardId,
+                users: currentUsers,
                 alreadySubscribed: true
             }));
             return;
@@ -625,10 +776,24 @@ export async function handleWebSocketMessage(
         ws.subscribe(topic);
         ws.data.subscriptions.add(topic);
 
-        // Acknowledge join to sender
+        // Collect all currently active users in this board room topic (including newly joined user)
+        const currentUsers = getBoardRoomUsers(topic);
+        if (ws.data?.userId && !currentUsers.some(u => u.userId === ws.data.userId))
+        {
+            currentUsers.push({
+                userId: ws.data.userId,
+                name: getCleanDisplayName(ws.data),
+                email: ws.data.email || undefined,
+                role: userRole || undefined,
+                rank: userRole || undefined
+            });
+        }
+
+        // Acknowledge join to sender with current active collaborators
         ws.send(JSON.stringify({
             type: "joined",
-            boardId
+            boardId,
+            users: currentUsers
         }));
 
         // Broadcast user:joined once to board room
@@ -636,8 +801,10 @@ export async function handleWebSocketMessage(
             type: "user:joined",
             payload: {
                 userId: ws.data.userId,
-                name: ws.data.name || ws.data.email || ws.data.userId,
+                name: getCleanDisplayName(ws.data),
                 email: ws.data.email,
+                role: userRole || undefined,
+                rank: userRole || undefined,
                 boardId
             },
             timestamp: Date.now()
@@ -681,17 +848,24 @@ export async function handleWebSocketMessage(
             boardId
         }));
 
-        const leaveEvent = JSON.stringify({
-            type: "user:left",
-            payload: {
-                userId: ws.data.userId,
-                name: ws.data.name || ws.data.email || ws.data.userId,
-                email: ws.data.email,
-                boardId
-            },
-            timestamp: Date.now()
-        });
-        server.publish(topic, leaveEvent);
+        const cleanUid = ws?.data?.userId?.trim();
+        const remainingSockets = cleanUid ? userSocketRegistry.get(cleanUid) : null;
+        const stillInTopic = remainingSockets && Array.from(remainingSockets).some(s => s !== ws && s.data?.subscriptions?.has(topic));
+
+        if (!stillInTopic)
+        {
+            const leaveEvent = JSON.stringify({
+                type: "user:left",
+                payload: {
+                    userId: ws.data.userId,
+                    name: getCleanDisplayName(ws.data),
+                    email: ws.data.email,
+                    boardId
+                },
+                timestamp: Date.now()
+            });
+            server.publish(topic, leaveEvent);
+        }
     } else if (action === "ping" || action === "heartbeat")
     {
         if (ws?.data)
@@ -744,16 +918,23 @@ export function handleWebSocketClose(
         {
             try
             {
-                server.publish(topic, JSON.stringify({
-                    type: "user:left",
-                    payload: {
-                        userId: ws.data.userId,
-                        name: ws.data.name || ws.data.email || ws.data.userId,
-                        email: ws.data.email,
-                        boardId: cleanBoardId(topic) || topic
-                    },
-                    timestamp: Date.now()
-                }));
+                const cleanUid = ws?.data?.userId?.trim();
+                const remainingSockets = cleanUid ? userSocketRegistry.get(cleanUid) : null;
+                const stillInTopic = remainingSockets && Array.from(remainingSockets).some(s => s.data?.subscriptions?.has(topic));
+
+                if (!stillInTopic)
+                {
+                    server.publish(topic, JSON.stringify({
+                        type: "user:left",
+                        payload: {
+                            userId: ws.data.userId,
+                            name: getCleanDisplayName(ws.data),
+                            email: ws.data.email,
+                            boardId: cleanBoardId(topic) || topic
+                        },
+                        timestamp: Date.now()
+                    }));
+                }
             } catch { }
 
             try

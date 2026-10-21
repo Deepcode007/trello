@@ -37,9 +37,15 @@ export async function loginHandler(req: Request, res: Response)
             });
         }
 
+        const displayName = (user.name && !user.name.includes("@"))
+            ? user.name.trim()
+            : (user.username && !user.username.includes("@"))
+                ? user.username.trim()
+                : (user.email ? user.email.split("@")[0] : "User");
+
         return res.status(200).json({
             success: true,
-            data: token(user.email, user.id)
+            data: token(user.email, user.id, displayName, user.username)
         })
 
     }
