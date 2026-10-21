@@ -31,6 +31,6 @@ if (!process.env.DATABASE_URL) {
 export const env = z.object({
     DATABASE_URL: z.url(),
     DATABASE_TEST_URL: z.url().optional(),
-    RUN_DB_TESTS: z.string().optional()
+    RUN_DB_TESTS: z.string()
 }).parse(process.env);
 
