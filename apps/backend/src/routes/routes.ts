@@ -1,4 +1,6 @@
-import { app } from "../..";
+import { Router } from "express";
+
+export const router = Router();
 import { createBoard } from "../controllers/board/createBoard";
 import { deleteBoard } from "../controllers/board/deleteBoard";
 import { getBoardDetails } from "../controllers/board/getaBoard";
@@ -38,112 +40,112 @@ import { getBoardEvents } from "../controllers/board/getEvents";
 import { createLabel, getLabels, attachLabel, detachLabel } from "../controllers/labels/labelsController";
 import { createChecklist, addChecklistItem, updateChecklistItem, deleteChecklist } from "../controllers/checklists/checklistsController";
 
-app.post("/api/auth/signup", asyncHandler(signupHandler));
-app.post("/api/auth/login", asyncHandler(loginHandler));
+router.post("/api/auth/signup", asyncHandler(signupHandler));
+router.post("/api/auth/login", asyncHandler(loginHandler));
 
-app.use(auth);
+router.use(auth);
 
-app.get("/api/users/me", asyncHandler(profileHandler));
+router.get("/api/users/me", asyncHandler(profileHandler));
 
 // Organizations & Memberships
 
 
 // List all organizations the current user is a member of.
-app.get("/api/orgs", asyncHandler(getCurrentOrgs));
+router.get("/api/orgs", asyncHandler(getCurrentOrgs));
 
 // Create a new organization (name, description).
-app.post("/api/orgs", asyncHandler(CreateOrgHandler));
+router.post("/api/orgs", asyncHandler(CreateOrgHandler));
 
 // Get details of a specific organization.
-app.get("/api/orgs/:orgId", asyncHandler(getOrgDetails));
+router.get("/api/orgs/:orgId", asyncHandler(getOrgDetails));
 
 // Update an organization's details.
 // name, desc, visible
 
-app.put("/api/orgs/:orgId", asyncHandler(UpdateOrgHandler));
+router.put("/api/orgs/:orgId", asyncHandler(UpdateOrgHandler));
 
 // Delete an organization.
-app.delete("/api/orgs/:orgId", asyncHandler(DeleteOrgHandler));
+router.delete("/api/orgs/:orgId", asyncHandler(DeleteOrgHandler));
 
 // List all users and their roles in the organization.
-app.get("/api/orgs/:orgId/members", asyncHandler(OrgMembersHandler));
+router.get("/api/orgs/:orgId/members", asyncHandler(OrgMembersHandler));
 
 // Add a user to an organization (requires userId and role).
-app.post("/api/orgs/:orgId/members", asyncHandler(inviteUserHandler));
+router.post("/api/orgs/:orgId/members", asyncHandler(inviteUserHandler));
 
 // Accept an invitation
-app.put("/api/orgs/:orgId/accept", asyncHandler(acceptInviteHandler));
+router.put("/api/orgs/:orgId/accept", asyncHandler(acceptInviteHandler));
 
 // Update a user's role (e.g., promote to admin). email, role in body
-app.put("/api/orgs/:orgId/members", asyncHandler(updateRoleHandler));
+router.put("/api/orgs/:orgId/members", asyncHandler(updateRoleHandler));
 
 // Remove a user from an organization. (incl admin leave/remove). email in body
-app.delete("/api/orgs/:orgId/members", asyncHandler(deleteUserHandler));
+router.delete("/api/orgs/:orgId/members", asyncHandler(deleteUserHandler));
 
 
 
 // Boards
 
 // List all boards within a specific organization.
-app.get("/api/orgs/:orgId/boards", asyncHandler(getAllBoards));
+router.get("/api/orgs/:orgId/boards", asyncHandler(getAllBoards));
 
 // Create a new board (title) within an organization.
-app.post("/api/orgs/:orgId/boards", asyncHandler(createBoard));
+router.post("/api/orgs/:orgId/boards", asyncHandler(createBoard));
 
 // Get board details, typically fetching sections and issues together.
-app.get("/api/boards/:boardId", asyncHandler(getBoardDetails));
+router.get("/api/boards/:boardId", asyncHandler(getBoardDetails));
 
 
 // Rename or update board details.
-app.put("/api/boards/:boardId", asyncHandler(updateBoard));
+router.put("/api/boards/:boardId", asyncHandler(updateBoard));
 
 // Delete a board and its associated data.
-app.delete("/api/boards/:boardId", asyncHandler(deleteBoard));
+router.delete("/api/boards/:boardId", asyncHandler(deleteBoard));
 
 
 // Sections (Columns)
 
 // List all sections for a specific board.
-app.get("/api/boards/:boardId/sections", asyncHandler(getAllSections));
+router.get("/api/boards/:boardId/sections", asyncHandler(getAllSections));
 
 // Create a new section (title) on a board.
-app.post("/api/boards/:boardId/sections", asyncHandler(createSection));
+router.post("/api/boards/:boardId/sections", asyncHandler(createSection));
 
 // Rename a specific section.
-app.put("/api/sections/:sectionId", asyncHandler(renameSection));
-app.patch("/api/sections/:sectionId", asyncHandler(renameSection));
+router.put("/api/sections/:sectionId", asyncHandler(renameSection));
+router.patch("/api/sections/:sectionId", asyncHandler(renameSection));
 
 // Delete a section (and handle/reassign orphaned issues). admin only
-app.delete("/api/sections/:sectionId", asyncHandler(deleteSection));
+router.delete("/api/sections/:sectionId", asyncHandler(deleteSection));
 
 
 // Issues (Cards)
 
 
 // List all issues within a specific section.
-app.get("/api/sections/:sectionId/issues", asyncHandler(getAllIssues));
-app.get("/api/sections/:sectionId/cards", asyncHandler(getAllIssues));
+router.get("/api/sections/:sectionId/issues", asyncHandler(getAllIssues));
+router.get("/api/sections/:sectionId/cards", asyncHandler(getAllIssues));
 
 // Create a new issue (title, boardId).
-app.post("/api/sections/:sectionId/issues", asyncHandler(createIssue));
-app.post("/api/sections/:sectionId/cards", asyncHandler(createIssue));
+router.post("/api/sections/:sectionId/issues", asyncHandler(createIssue));
+router.post("/api/sections/:sectionId/cards", asyncHandler(createIssue));
 
 // 	Get full details of a specific issue.
-app.get("/api/issues/:issueId", asyncHandler(issueDetail));
-app.get("/api/cards/:issueId", asyncHandler(issueDetail));
+router.get("/api/issues/:issueId", asyncHandler(issueDetail));
+router.get("/api/cards/:issueId", asyncHandler(issueDetail));
 
 // Update an issue (edit text, or move to a new sectionId).
-app.patch("/api/issues/:issueId", asyncHandler(updateIssue));
-app.patch("/api/cards/:issueId", asyncHandler(updateIssue));
-app.patch("/api/cards/:issueId/move", asyncHandler(updateIssue));
+router.patch("/api/issues/:issueId", asyncHandler(updateIssue));
+router.patch("/api/cards/:issueId", asyncHandler(updateIssue));
+router.patch("/api/cards/:issueId/move", asyncHandler(updateIssue));
 
 // Card aliases with :id
-app.patch("/api/cards/:id/move", asyncHandler(updateIssue));
-app.patch("/api/cards/:id", asyncHandler(updateIssue));
+router.patch("/api/cards/:id/move", asyncHandler(updateIssue));
+router.patch("/api/cards/:id", asyncHandler(updateIssue));
 
 // Delete an issue.
-app.delete("/api/issues/:issueId", asyncHandler(deleteIssue));
-app.delete("/api/cards/:issueId", asyncHandler(deleteIssue));
+router.delete("/api/issues/:issueId", asyncHandler(deleteIssue));
+router.delete("/api/cards/:issueId", asyncHandler(deleteIssue));
 
 
 // Issue Assignments & Comments
@@ -151,35 +153,35 @@ app.delete("/api/cards/:issueId", asyncHandler(deleteIssue));
 
 // Assign a user to an issue (creates issues_mapping record).
 // take emails of users => []
-app.post("/api/issues/:issueId/assignees", asyncHandler(assignIssue));
+router.post("/api/issues/:issueId/assignees", asyncHandler(assignIssue));
 
 // Remove a user's assignment from an issue. email in body
-app.delete("/api/issues/:issueId/assignees/", asyncHandler(removeAssignment));
+router.delete("/api/issues/:issueId/assignees/", asyncHandler(removeAssignment));
 
 // List all comments on a specific issue.
-app.get("/api/issues/:issueId/comments", asyncHandler(getAllComments));
+router.get("/api/issues/:issueId/comments", asyncHandler(getAllComments));
 
 // Add a comment to an issue (tied to the current user). (also possible for reply, parentId, desc in body)
-app.post("/api/issues/:issueId/comments", asyncHandler(addComment));
+router.post("/api/issues/:issueId/comments", asyncHandler(addComment));
 
 // Edit a specific comment. within 1 day
-app.put("/api/comments/:commentId", asyncHandler(editComment));
+router.put("/api/comments/:commentId", asyncHandler(editComment));
 
 // Delete a comment.
-app.delete("/api/comments/:commentId", asyncHandler(deleteComment));
+router.delete("/api/comments/:commentId", asyncHandler(deleteComment));
 
 // Board Events & Catch-up Sync
-app.get("/api/boards/:boardId/events", asyncHandler(getBoardEvents));
-app.get("/api/boards/:id/events", asyncHandler(getBoardEvents));
+router.get("/api/boards/:boardId/events", asyncHandler(getBoardEvents));
+router.get("/api/boards/:id/events", asyncHandler(getBoardEvents));
 
 // Labels
-app.post("/api/boards/:boardId/labels", asyncHandler(createLabel));
-app.get("/api/boards/:boardId/labels", asyncHandler(getLabels));
-app.post("/api/issues/:issueId/labels", asyncHandler(attachLabel));
-app.delete("/api/issues/:issueId/labels/:labelId", asyncHandler(detachLabel));
+router.post("/api/boards/:boardId/labels", asyncHandler(createLabel));
+router.get("/api/boards/:boardId/labels", asyncHandler(getLabels));
+router.post("/api/issues/:issueId/labels", asyncHandler(attachLabel));
+router.delete("/api/issues/:issueId/labels/:labelId", asyncHandler(detachLabel));
 
 // Checklists & Subtasks
-app.post("/api/issues/:issueId/checklists", asyncHandler(createChecklist));
-app.post("/api/checklists/:checklistId/items", asyncHandler(addChecklistItem));
-app.patch("/api/checklists/items/:itemId", asyncHandler(updateChecklistItem));
-app.delete("/api/checklists/:checklistId", asyncHandler(deleteChecklist));
+router.post("/api/issues/:issueId/checklists", asyncHandler(createChecklist));
+router.post("/api/checklists/:checklistId/items", asyncHandler(addChecklistItem));
+router.patch("/api/checklists/items/:itemId", asyncHandler(updateChecklistItem));
+router.delete("/api/checklists/:checklistId", asyncHandler(deleteChecklist));

@@ -1,16 +1,17 @@
 import { wsBroadcaster } from "./src/services/broadcaster.ts";
 import express from "express";
 import cors from "cors";
+import { router } from "./src/routes/routes.ts";
 
 import { env } from "./src/env.ts";
 
 export const app = express();
 app.use(express.json());
 app.use(cors());
+app.use(router);
 
 const port = env.port;
 
-await import("./src/routes/routes.ts");
 
 const server = app.listen(port, () =>
 {
