@@ -34,11 +34,36 @@ describe("Phase 1 Bug & Security Fixes Unit Suite", () => {
         const origUserFindUnique = prisma.user.findUnique;
         const origOrgsFindUnique = prisma.orgs.findUnique;
         const origMembershipCreate = prisma.membership.create;
+        const origTransaction = prisma.$transaction;
+        const origNotifications = (prisma as any).notifications;
+
+        beforeEach(() => {
+            const mockNotifs = {
+                create: mock(async (args: any) => ({
+                    id: "mock-notif-id",
+                    ...args.data,
+                    createdAt: new Date()
+                })),
+                createManyAndReturn: mock(async (args: any) => args.data.map((d: any) => ({
+                    id: "mock-notif-id",
+                    ...d,
+                    createdAt: new Date()
+                })))
+            };
+            (prisma as any).notifications = mockNotifs;
+            prisma.$transaction = mock(async (cb: any) => cb({
+                ...prisma,
+                notifications: mockNotifs,
+                $queryRaw: mock(() => Promise.resolve([{ locked: 1 }]))
+            })) as any;
+        });
 
         afterEach(() => {
             prisma.user.findUnique = origUserFindUnique;
             prisma.orgs.findUnique = origOrgsFindUnique;
             prisma.membership.create = origMembershipCreate;
+            prisma.$transaction = origTransaction;
+            (prisma as any).notifications = origNotifications;
         });
 
         it("defaults role to contributor when role is omitted", async () => {

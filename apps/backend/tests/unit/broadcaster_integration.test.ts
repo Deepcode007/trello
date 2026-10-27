@@ -245,4 +245,98 @@ describe("Backend Broadcaster Singleton and Event-Emitter Integration Tests", ()
             expect(await broadcaster.evictUser(12345 as any)).toBe(false);
         });
     });
+
+    describe("notifyUsers and notifyUser IPC behavior", () =>
+    {
+        it("dispatches notification request to /internal/notify-users and emits local events", async () =>
+        {
+            const broadcaster = new WebSocketBroadcaster();
+            broadcaster.setPort(9999);
+
+            let fetchUrl = "";
+            let fetchBody: any = null;
+            const origFetch = globalThis.fetch;
+            globalThis.fetch = ((url: any, opts: any) =>
+            {
+                fetchUrl = String(url);
+                fetchBody = JSON.parse(opts.body);
+                return Promise.resolve(new Response(JSON.stringify({ success: true }), { status: 200 }));
+            }) as any;
+
+            let localNotifUserId = "";
+            let localNotifEvent: any = null;
+            broadcaster.on("notification", ({ userId, event }) => {
+                localNotifUserId = userId;
+                localNotifEvent = event;
+            });
+
+            try
+            {
+                const ok = await broadcaster.notifyUser("user-1", { type: "user:notification", payload: { msg: "hello" } });
+                expect(ok).toBe(true);
+                expect(fetchUrl).toBe("http://127.0.0.1:9999/internal/notify-users");
+                expect(fetchBody.userIds).toEqual(["user-1"]);
+                expect(fetchBody.event.type).toBe("user:notification");
+                expect(localNotifUserId).toBe("user-1");
+                expect(localNotifEvent.type).toBe("user:notification");
+            } finally
+            {
+                globalThis.fetch = origFetch;
+            }
+        });
+
+        it("returns false immediately for empty or invalid userIds", async () =>
+        {
+            const broadcaster = new WebSocketBroadcaster();
+            expect(await broadcaster.notifyUsers([], { type: "test", payload: {} })).toBe(false);
+            expect(await broadcaster.notifyUsers(null as any, { type: "test", payload: {} })).toBe(false);
+            expect(await broadcaster.notifyUser("", { type: "test", payload: {} })).toBe(false);
+            expect(await broadcaster.notifyUser("   ", { type: "test", payload: {} })).toBe(false);
+        });
+    });
+
+    describe("updateUserRole IPC behavior (SEC-4)", () =>
+    {
+        it("dispatches role update to /internal/update-role and emits local events", async () =>
+        {
+            const broadcaster = new WebSocketBroadcaster();
+            broadcaster.setPort(9999);
+
+            let fetchUrl = "";
+            let fetchBody: any = null;
+            const origFetch = globalThis.fetch;
+            globalThis.fetch = ((url: any, opts: any) =>
+            {
+                fetchUrl = String(url);
+                fetchBody = JSON.parse(opts.body);
+                return Promise.resolve(new Response(JSON.stringify({ success: true }), { status: 200 }));
+            }) as any;
+
+            let localRoleData: any = null;
+            broadcaster.on("updateUserRole", (data) => {
+                localRoleData = data;
+            });
+
+            try
+            {
+                const ok = await broadcaster.updateUserRole("user-1", "org-1", "employee");
+                expect(ok).toBe(true);
+                expect(fetchUrl).toBe("http://127.0.0.1:9999/internal/update-role");
+                expect(fetchBody).toEqual({ userId: "user-1", orgId: "org-1", role: "employee" });
+                expect(localRoleData).toEqual({ userId: "user-1", orgId: "org-1", role: "employee" });
+            } finally
+            {
+                globalThis.fetch = origFetch;
+            }
+        });
+
+        it("returns false immediately for missing or invalid parameters", async () =>
+        {
+            const broadcaster = new WebSocketBroadcaster();
+            expect(await broadcaster.updateUserRole("", "org-1", "admin")).toBe(false);
+            expect(await broadcaster.updateUserRole("user-1", "", "admin")).toBe(false);
+            expect(await broadcaster.updateUserRole("user-1", "org-1", "")).toBe(false);
+        });
+    });
 });
+

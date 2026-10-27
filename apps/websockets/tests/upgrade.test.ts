@@ -1,6 +1,6 @@
 import { describe, expect, it, mock } from "bun:test";
 import jwt from "jsonwebtoken";
-import { handleUpgradeRequest, createWebSocketServer, userSocketRegistry, evictUserSockets } from "../src/server";
+import { handleUpgradeRequest, createWebSocketServer, userSocketRegistry, evictUserSockets, updateUserRole, userOrgRole, userBoardRole, boardOrgMap } from "../src/server";
 import type { WebSocketData } from "../src/types/events";
 import { env } from "../src/env";
 
@@ -516,4 +516,94 @@ describe("WebSocket Upgrade Handshake & HTTP Layer Tests", () => {
             userSocketRegistry.delete(malformedUserId);
         });
     });
+
+    describe("POST /internal/update-role Tests (SEC-4)", () => {
+        it("rejects /internal/update-role with 403 on invalid secret", async () => {
+            const mockServer = createMockServer();
+            const req = new Request("http://localhost:3001/internal/update-role", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "x-internal-secret": "wrong-secret"
+                },
+                body: JSON.stringify({ userId: "u1", orgId: "o1", role: "employee" })
+            });
+
+            const res = await handleUpgradeRequest(req, mockServer, JWT_SECRET);
+            expect(res?.status).toBe(403);
+        });
+
+        it("rejects /internal/update-role with 400 on missing or invalid fields", async () => {
+            const mockServer = createMockServer();
+            const req = new Request("http://localhost:3001/internal/update-role", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "x-internal-secret": JWT_SECRET as string
+                },
+                body: JSON.stringify({ userId: "u1" })
+            });
+
+            const res = await handleUpgradeRequest(req, mockServer, JWT_SECRET);
+            expect(res?.status).toBe(400);
+        });
+
+        it("updates user role in cache registries and connected socket data", async () => {
+            const mockServer = createMockServer();
+            const testUserId = "user-role-update-1";
+            const testOrgId = "org-role-update-1";
+            const testBoardId = "board-role-update-1";
+
+            // Seed boardOrgMap
+            boardOrgMap.set(testBoardId, testOrgId);
+
+            // Create a mock socket
+            const mockWs: any = {
+                data: {
+                    userId: testUserId,
+                    role: "contributor"
+                }
+            };
+            userSocketRegistry.set(testUserId, new Set([mockWs]));
+
+            const req = new Request("http://localhost:3001/internal/update-role", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "x-internal-secret": JWT_SECRET as string
+                },
+                body: JSON.stringify({
+                    userId: testUserId,
+                    orgId: testOrgId,
+                    role: "admin"
+                })
+            });
+
+            const res = await handleUpgradeRequest(req, mockServer, JWT_SECRET);
+            expect(res?.status).toBe(200);
+            const data = (await res?.json()) as any;
+            expect(data.success).toBe(true);
+            expect(data.updated).toBe(true);
+
+            // Verify userOrgRole was updated
+            expect(userOrgRole.get(`${testUserId}:${testOrgId}`)).toBe("admin");
+            // Verify userBoardRole was updated for boards in that org
+            expect(userBoardRole.get(`${testUserId}:${testBoardId}`)).toBe("admin");
+            // Verify socket data role was updated
+            expect(mockWs.data.role).toBe("admin");
+
+            // Cleanup
+            userSocketRegistry.delete(testUserId);
+            userOrgRole.delete(`${testUserId}:${testOrgId}`);
+            userBoardRole.delete(`${testUserId}:${testBoardId}`);
+            boardOrgMap.delete(testBoardId);
+        });
+
+        it("direct updateUserRole invocation safely returns false for invalid input", () => {
+            expect(updateUserRole("", "o1", "admin")).toBe(false);
+            expect(updateUserRole("u1", "", "admin")).toBe(false);
+            expect(updateUserRole("u1", "o1", "")).toBe(false);
+        });
+    });
 });
+
