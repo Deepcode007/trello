@@ -37,6 +37,8 @@ model user {
     memberships   membership[]
     issueMappings issue_mapping[]
     comments      comments[]
+    notifications notifications[]
+    mentions      mentions[]
 }
 
 model orgs {
@@ -165,6 +167,8 @@ model comments {
     updatedAt DateTime  @default(now()) @updatedAt
     deletedAt DateTime?
 
+    mentions mentions[]
+
     @@index([issueId, createdAt(sort: Desc)])
     @@index([parentId])
     @@index([userId])
@@ -247,4 +251,32 @@ model board_events {
     @@index([boardId, published])
     @@index([boardId, published, claimExpiresAt])
     @@index([createdAt])
+}
+
+model notifications {
+    id          String   @id @default(uuid())
+    recipientId String
+    type        String
+    data        Json
+    read        Boolean  @default(false)
+    createdAt   DateTime @default(now())
+
+    recipient user @relation(fields: [recipientId], references: [id], onDelete: Cascade)
+
+    @@index([recipientId, read, createdAt(sort: Desc)])
+    @@index([recipientId, createdAt(sort: Desc)])
+}
+
+model mentions {
+    id        String   @id @default(uuid())
+    commentId String
+    userId    String
+    createdAt DateTime @default(now())
+
+    comment comments @relation(fields: [commentId], references: [id], onDelete: Cascade)
+    user    user     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+    @@unique([commentId, userId])
+    @@index([userId])
+    @@index([commentId])
 }
