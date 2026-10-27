@@ -39,6 +39,10 @@ import { auth } from "../middlewares/auth";
 import { getBoardEvents } from "../controllers/board/getEvents";
 import { createLabel, getLabels, attachLabel, detachLabel } from "../controllers/labels/labelsController";
 import { createChecklist, addChecklistItem, updateChecklistItem, deleteChecklist } from "../controllers/checklists/checklistsController";
+import { getNotifications } from "../controllers/notifications/getNotifications";
+import { getUnreadCount } from "../controllers/notifications/getUnreadCount";
+import { markAsRead } from "../controllers/notifications/markAsRead";
+import { markAllAsRead } from "../controllers/notifications/markAllAsRead";
 
 router.post("/api/auth/signup", asyncHandler(signupHandler));
 router.post("/api/auth/login", asyncHandler(loginHandler));
@@ -185,3 +189,9 @@ router.post("/api/issues/:issueId/checklists", asyncHandler(createChecklist));
 router.post("/api/checklists/:checklistId/items", asyncHandler(addChecklistItem));
 router.patch("/api/checklists/items/:itemId", asyncHandler(updateChecklistItem));
 router.delete("/api/checklists/:checklistId", asyncHandler(deleteChecklist));
+
+// Notifications
+router.get("/api/notifications", asyncHandler(getNotifications));
+router.get("/api/notifications/unread-count", asyncHandler(getUnreadCount));
+router.patch("/api/notifications/read-all", asyncHandler(markAllAsRead));
+router.patch("/api/notifications/:notificationId/read", asyncHandler(markAsRead));
