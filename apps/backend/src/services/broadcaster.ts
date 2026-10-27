@@ -495,6 +495,96 @@ export class WebSocketBroadcaster extends EventEmitter
         return false;
     }
 
+    public async notifyUsers(userIds: string[], event: { type: string; payload: unknown }): Promise<boolean>
+    {
+        if (!userIds || !Array.isArray(userIds) || userIds.length === 0)
+        {
+            return false;
+        }
+
+        const validUserIds = userIds.filter(id => id && typeof id === "string" && id.trim());
+        if (validUserIds.length === 0) return false;
+
+        this.emit("notifyUsers", { userIds: validUserIds, event });
+        for (const userId of validUserIds)
+        {
+            this.emit("notification", { userId, event });
+            this.emit(`user:${userId}`, event);
+        }
+
+        try
+        {
+            const baseUrl = this.customPort ? `http://127.0.0.1:${this.wsPort}` : (env.WS_INTERNAL_URL || `http://127.0.0.1:${this.wsPort}`);
+            const endpoint = `${baseUrl.replace(/\/$/, "")}/internal/notify-users`;
+            const internalSecret = env.INTERNAL_BROADCAST_SECRET || env.jwt_key || "";
+            const headers: Record<string, string> = { "Content-Type": "application/json" };
+            if (internalSecret) headers["x-internal-secret"] = internalSecret;
+
+            const res = await fetch(endpoint, {
+                method: "POST",
+                headers,
+                body: JSON.stringify({ userIds: validUserIds, event }),
+                signal: AbortSignal.timeout(1000)
+            });
+            return res.ok;
+        } catch
+        {
+            return false;
+        }
+    }
+
+    public async notifyUser(userId: string, event: { type: string; payload: unknown }): Promise<boolean>
+    {
+        if (!userId || typeof userId !== "string" || !userId.trim())
+        {
+            return false;
+        }
+        return this.notifyUsers([userId.trim()], event);
+    }
+
+    public async updateUserRole(userId: string, orgId: string, role: string, maxRetries: number = 2): Promise<boolean>
+    {
+        if (!userId || typeof userId !== "string" || !userId.trim() || !orgId || !role)
+        {
+            return false;
+        }
+
+        const cleanUid = userId.trim();
+        const cleanOid = typeof orgId === "string" ? orgId.trim() : orgId;
+
+        this.emit("updateUserRole", { userId: cleanUid, orgId: cleanOid, role });
+        this.emit("updateRole", { userId: cleanUid, orgId: cleanOid, role });
+
+        const baseUrl = this.customPort ? `http://127.0.0.1:${this.wsPort}` : (env.WS_INTERNAL_URL || `http://127.0.0.1:${this.wsPort}`);
+        const endpoint = `${baseUrl.replace(/\/$/, "")}/internal/update-role`;
+        const internalSecret = env.INTERNAL_BROADCAST_SECRET || env.jwt_key || "";
+        const headers: Record<string, string> = { "Content-Type": "application/json" };
+        if (internalSecret) headers["x-internal-secret"] = internalSecret;
+        const bodyStr = JSON.stringify({ userId: cleanUid, orgId: cleanOid, role });
+
+        for (let attempt = 0; attempt <= maxRetries; attempt++)
+        {
+            try
+            {
+                const res = await fetch(endpoint, {
+                    method: "POST",
+                    headers,
+                    body: bodyStr,
+                    signal: AbortSignal.timeout(1000)
+                });
+                if (res.ok) return true;
+            } catch
+            {
+                // Network error / timeout
+            }
+            if (attempt < maxRetries)
+            {
+                await new Promise((r) => setTimeout(r, (attempt + 1) * 50));
+            }
+        }
+        return false;
+    }
+
     public async broadcastCardMoved(boardId: string, payload: CardMovedPayload, options?: BroadcastOptions): Promise<boolean>
     {
         return this.broadcast(boardId, {

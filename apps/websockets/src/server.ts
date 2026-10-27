@@ -86,6 +86,36 @@ export function recordUserMembership(userId: string, orgId: string, boardId?: st
     }
 }
 
+export function updateUserRole(userId: string, orgId: string, role: string): boolean
+{
+    const cleanUid = userId?.trim();
+    const cleanOid = orgId?.trim();
+    if (!cleanUid || !cleanOid || !role) return false;
+
+    userOrgRole.set(`${cleanUid}:${cleanOid}`, role);
+
+    for (const [boardId, mappedOrgId] of boardOrgMap.entries())
+    {
+        if (mappedOrgId === cleanOid)
+        {
+            userBoardRole.set(`${cleanUid}:${boardId}`, role);
+        }
+    }
+
+    const sockets = userSocketRegistry.get(cleanUid);
+    if (sockets)
+    {
+        for (const sock of sockets)
+        {
+            if (sock?.data)
+            {
+                (sock.data as any).role = role;
+            }
+        }
+    }
+    return true;
+}
+
 export function revokeUserMembership(userId: string, orgId: string): void
 {
     const cleanUid = userId?.trim();
@@ -563,6 +593,49 @@ export function handleUpgradeRequest(
                 }
                 const evictedCount = await evictUserSockets(server, body as any);
                 return new Response(JSON.stringify({ success: true, evictedCount }), {
+                    status: 200,
+                    headers: { "Content-Type": "application/json" }
+                });
+            } catch
+            {
+                return new Response(JSON.stringify({ error: "Invalid JSON payload" }), {
+                    status: 400,
+                    headers: { "Content-Type": "application/json" }
+                });
+            }
+        })();
+    }
+
+    // 1c. Internal administrative endpoint to update cached user role (SEC-4)
+    if (req.method === "POST" && url.pathname === "/internal/update-role")
+    {
+        return (async () =>
+        {
+            try
+            {
+                const expectedSecret = env.INTERNAL_BROADCAST_SECRET || jwtSecret;
+                const internalSecret = req.headers.get("x-internal-secret");
+                if (expectedSecret && internalSecret !== expectedSecret)
+                {
+                    return new Response(JSON.stringify({ error: "Forbidden: invalid internal secret" }), {
+                        status: 403,
+                        headers: { "Content-Type": "application/json" }
+                    });
+                }
+                const body = await req.json() as {
+                    userId?: string;
+                    orgId?: string;
+                    role?: string;
+                };
+                if (!body?.userId || typeof body.userId !== "string" || !body?.orgId || typeof body.orgId !== "string" || !body?.role || typeof body.role !== "string")
+                {
+                    return new Response(JSON.stringify({ error: "Missing or invalid userId, orgId, or role" }), {
+                        status: 400,
+                        headers: { "Content-Type": "application/json" }
+                    });
+                }
+                const updated = updateUserRole(body.userId, body.orgId, body.role);
+                return new Response(JSON.stringify({ success: true, updated }), {
                     status: 200,
                     headers: { "Content-Type": "application/json" }
                 });
@@ -1144,6 +1217,7 @@ export function createWebSocketServer(options: WebSocketServerOptions = {}): Ser
     // Register with singleton broadcaster
     wsBroadcaster.setServer(server);
     wsBroadcaster.setEvictionHandler((opts) => evictUserSockets(server, opts));
+    wsBroadcaster.setRoleUpdateHandler((opts) => updateUserRole(opts.userId, opts.orgId, opts.role));
 
     return server;
 }

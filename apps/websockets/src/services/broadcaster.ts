@@ -9,6 +9,12 @@ export type EvictionHandler = (options: {
     reason?: string;
 }) => Promise<number | boolean> | number | boolean;
 
+export type RoleUpdateHandler = (options: {
+    userId: string;
+    orgId: string;
+    role: string;
+}) => boolean;
+
 type InternalServer = { publish?: (topic: string, message: string) => number };
 let singleton: WebSocketBroadcaster | undefined;
 
@@ -18,6 +24,7 @@ export class WebSocketBroadcaster extends EventEmitter
     private wsPort = Number(env.ws_port);
     private customPort = false;
     private evictionHandler: EvictionHandler | null = null;
+    private roleUpdateHandler: RoleUpdateHandler | null = null;
 
     public static getInstance(): WebSocketBroadcaster
     {
@@ -34,6 +41,8 @@ export class WebSocketBroadcaster extends EventEmitter
     }
     public setEvictionHandler(handler: EvictionHandler): void { this.evictionHandler = handler; }
     public getEvictionHandler(): EvictionHandler | null { return this.evictionHandler; }
+    public setRoleUpdateHandler(handler: RoleUpdateHandler): void { this.roleUpdateHandler = handler; }
+    public getRoleUpdateHandler(): RoleUpdateHandler | null { return this.roleUpdateHandler; }
 
     public publish(topic: string, message: unknown): number
     {
@@ -111,6 +120,69 @@ export class WebSocketBroadcaster extends EventEmitter
             if (attempt < maxRetries) await new Promise(resolve => setTimeout(resolve, (attempt + 1) * 50));
         }
         return false;
+    }
+
+    public async updateUserRole(userId: string, orgId: string, role: string, maxRetries = 2): Promise<boolean>
+    {
+        if (!userId || typeof userId !== "string" || !userId.trim() || !orgId || !role) return false;
+        this.emit("updateUserRole", { userId, orgId, role });
+        this.emit("updateRole", { userId, orgId, role });
+        if (this.roleUpdateHandler)
+        {
+            try { return Boolean(this.roleUpdateHandler({ userId: userId.trim(), orgId: orgId.trim(), role })); }
+            catch { return false; }
+        }
+        const baseUrl = this.customPort ? `http://127.0.0.1:${this.wsPort}` : (env.WS_INTERNAL_URL || `http://127.0.0.1:${this.wsPort}`);
+        const endpoint = `${baseUrl.replace(/\/$/, "")}/internal/update-role`;
+        for (let attempt = 0; attempt <= maxRetries; attempt++)
+        {
+            try
+            {
+                const response = await fetch(endpoint, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json", "x-internal-secret": env.INTERNAL_BROADCAST_SECRET || env.jwt_key || "" },
+                    body: JSON.stringify({ userId: userId.trim(), orgId: orgId.trim(), role }),
+                    signal: AbortSignal.timeout(1000)
+                });
+                if (response.ok) return true;
+            }
+            catch { /* retry transient transport failures */ }
+            if (attempt < maxRetries) await new Promise(resolve => setTimeout(resolve, (attempt + 1) * 50));
+        }
+        return false;
+    }
+
+    public async notifyUsers(userIds: string[], event: { type: string; payload: unknown }): Promise<boolean>
+    {
+        if (!userIds || !Array.isArray(userIds) || userIds.length === 0) return false;
+        const validUserIds = userIds.filter(id => id && typeof id === "string" && id.trim());
+        if (validUserIds.length === 0) return false;
+
+        this.emit("notifyUsers", { userIds: validUserIds, event });
+        for (const userId of validUserIds)
+        {
+            this.emit("notification", { userId, event });
+            this.emit(`user:${userId}`, event);
+        }
+
+        try
+        {
+            const baseUrl = this.customPort ? `http://127.0.0.1:${this.wsPort}` : (env.WS_INTERNAL_URL || `http://127.0.0.1:${this.wsPort}`);
+            const endpoint = `${baseUrl.replace(/\/$/, "")}/internal/notify-users`;
+            const response = await fetch(endpoint, {
+                method: "POST",
+                headers: { "Content-Type": "application/json", "x-internal-secret": env.INTERNAL_BROADCAST_SECRET || env.jwt_key || "" },
+                body: JSON.stringify({ userIds: validUserIds, event }),
+                signal: AbortSignal.timeout(1000)
+            });
+            return response.ok;
+        } catch { return false; }
+    }
+
+    public async notifyUser(userId: string, event: { type: string; payload: unknown }): Promise<boolean>
+    {
+        if (!userId || typeof userId !== "string" || !userId.trim()) return false;
+        return this.notifyUsers([userId.trim()], event);
     }
 
     public broadcastCardMoved(boardId: string, payload: CardMovedPayload, options?: BroadcastOptions): Promise<boolean> { return this.broadcast(boardId, { type: "card:moved", payload }, options); }
