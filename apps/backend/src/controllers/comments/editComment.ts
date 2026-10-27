@@ -11,7 +11,7 @@ export async function editComment(req: Request, res: Response)
     }).safeParse(req.params);
 
     const result2 = zod.object({
-        description: zod.string().trim().min(1)
+        description: zod.string().trim().min(1).max(10000)
     }).safeParse(req.body);
 
     if (!result.success || !result2.success)

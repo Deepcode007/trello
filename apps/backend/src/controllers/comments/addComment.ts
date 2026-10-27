@@ -12,7 +12,7 @@ export async function addComment(req: Request, res: Response)
 
     const result2 = zod.object({
         parentId: zod.uuid().optional(),
-        description: zod.string().trim().min(1)
+        description: zod.string().trim().min(1).max(10000)
     }).safeParse(req.body);
 
     if (!result.success || !result2.success)
