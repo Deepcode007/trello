@@ -15,45 +15,56 @@ export async function acceptInviteHandler(req: Request, res: Response)
         throw new ValidationError();
     }
 
-    const org = await prisma.orgs.findUnique({
-        where: {
-            id: result1.data.orgId,
-            members: {
-                some: {
-                    userId: req.id
-                }
-            }
-        },
-        select: {
-            members: {
-                where: {
-                    userId: req.id
-                }
-            }
-        }
-    });
-
-    if (!org)
+    await prisma.$transaction(async tx =>
     {
-        throw new Not_Found("Org not found");
-    }
-
-    if (org.members.length === 0) throw new Forbidden("User not invited");
-
-    const member = org.members[0]!.accepted === true;
-    if (member) throw new Duplicate("User already member");
-
-    await prisma.membership.update({
-        where: {
-            userId_orgId: {
-                userId: req.id,
-                orgId: result1.data.orgId
-            }
-        },
-        data: {
-            accepted: true
+        if (typeof tx.$queryRaw === "function")
+        {
+            await tx.$queryRaw`WITH advisory_lock AS MATERIALIZED (
+                SELECT pg_advisory_xact_lock(hashtext(${result1.data.orgId}))
+            )
+            SELECT 1::int AS locked FROM advisory_lock`;
         }
-    })
+
+        const org = await tx.orgs.findUnique({
+            where: {
+                id: result1.data.orgId,
+                members: {
+                    some: {
+                        userId: req.id
+                    }
+                }
+            },
+            select: {
+                members: {
+                    where: {
+                        userId: req.id
+                    }
+                }
+            }
+        });
+
+        if (!org)
+        {
+            throw new Not_Found("Org not found");
+        }
+
+        if (org.members.length === 0) throw new Forbidden("User not invited");
+
+        const member = org.members[0]!.accepted === true;
+        if (member) throw new Duplicate("User already member");
+
+        await tx.membership.update({
+            where: {
+                userId_orgId: {
+                    userId: req.id,
+                    orgId: result1.data.orgId
+                }
+            },
+            data: {
+                accepted: true
+            }
+        });
+    });
 
     return res.status(200).json({
         success: true,
