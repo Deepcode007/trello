@@ -8,21 +8,21 @@ Designed for agile teams and organizations, this platform provides hierarchical 
 
 ## 🚀 Tech Stack
 
-| Domain                        | Technologies                                                                                                |
-| :---------------------------- | :---------------------------------------------------------------------------------------------------------- |
-| **Runtime & Package Manager** | [Bun](https://bun.com/) (v1.3+ / v1.4+)                                                                     |
-| **Monorepo Engine**           | [Turborepo](https://turbo.build/repo) (v2)                                                                  |
-| **Language**                  | [TypeScript](https://www.typescriptlang.org/) (Strict typing across all workspaces)                         |
-| **Frontend Framework**        | [React 19](https://react.dev/) + [Vite](https://vite.dev/) (High-performance SPA)                           |
-| **Frontend State & Cache**    | [TanStack Query v5](https://tanstack.com/query), [Zustand](https://zustand-demo.pmnd.rs/)                    |
-| **Frontend Drag & Drop**      | [@dnd-kit](https://dndkit.com/) (`core` + `sortable`)                                                       |
+| Domain                        | Technologies                                                                                                                    |
+| :---------------------------- | :------------------------------------------------------------------------------------------------------------------------------ |
+| **Runtime & Package Manager** | [Bun](https://bun.com/) (v1.3+ / v1.4+)                                                                                         |
+| **Monorepo Engine**           | [Turborepo](https://turbo.build/repo) (v2)                                                                                      |
+| **Language**                  | [TypeScript](https://www.typescriptlang.org/) (Strict typing across all workspaces)                                             |
+| **Frontend Framework**        | [React 19](https://react.dev/) + [Vite](https://vite.dev/) (High-performance SPA)                                               |
+| **Frontend State & Cache**    | [TanStack Query v5](https://tanstack.com/query), [Zustand](https://zustand-demo.pmnd.rs/)                                       |
+| **Frontend Drag & Drop**      | [@dnd-kit](https://dndkit.com/) (`core` + `sortable`)                                                                           |
 | **Frontend UI & Styling**     | [Tailwind CSS](https://tailwindcss.com/), [Radix UI Primitives](https://www.radix-ui.com/), [Lucide React](https://lucide.dev/) |
-| **Backend Framework**         | [Express 5](https://expressjs.com/) on Bun runtime                                                          |
-| **Real-Time Engine**          | Native [Bun WebSockets](https://bun.com/docs/api/websockets) (Pub/Sub topics, room subscriptions, presence) |
-| **Database & ORM**            | [PostgreSQL](https://www.postgresql.org/) with [Prisma ORM](https://www.prisma.io/) (`@prisma/adapter-pg`)  |
-| **Authentication & Security** | JWT (`jsonwebtoken`), `bcrypt` password hashing, Role-Based Access Control (RBAC)                           |
-| **Validation**                | [Zod](https://zod.dev/) schema validation for requests and environment configurations                       |
-| **Testing**                   | Bun Test runner (`bun:test`), Supertest, custom integration, component & unit test suites (799 tests)        |
+| **Backend Framework**         | [Express 5](https://expressjs.com/) on Bun runtime                                                                              |
+| **Real-Time Engine**          | Native [Bun WebSockets](https://bun.com/docs/api/websockets) (Pub/Sub topics, room subscriptions, presence)                     |
+| **Database & ORM**            | [PostgreSQL](https://www.postgresql.org/) with [Prisma ORM](https://www.prisma.io/) (`@prisma/adapter-pg`)                      |
+| **Authentication & Security** | JWT (`jsonwebtoken`), `bcrypt` password hashing, Role-Based Access Control (RBAC)                                               |
+| **Validation**                | [Zod](https://zod.dev/) schema validation for requests and environment configurations                                           |
+| **Testing**                   | Bun Test runner (`bun:test`), Supertest, custom integration, component & unit test suites (799 tests)                           |
 
 ---
 
@@ -99,7 +99,7 @@ trello/
 │   │   │   ├── routes/        # Express route definitions (with card & section aliases)
 │   │   │   ├── services/      # WebSocketBroadcaster & Transactional Outbox Worker
 │   │   │   └── types/         # TypeScript environment and entity typings
-│   │   └── tests/             # Integration & unit test suites (179 unit tests)
+│   │   └── tests/             # Integration & unit test suites (180 unit tests)
 │   │
 │   ├── websockets/            # Native Bun WebSocket collaborative server
 │   │   ├── src/
@@ -107,7 +107,7 @@ trello/
 │   │   │   ├── server/        # Bun.serve WebSocket server, upgrade handlers, heartbeat & close hooks
 │   │   │   ├── services/      # Broadcaster singleton, in-memory membership cache, & IPC handler
 │   │   │   └── types/         # Client actions, server events, & payload interfaces
-│   │   ├── tests/             # WebSocket test suites (128 tests across auth, pub/sub, heartbeat, upgrade)
+│   │   ├── tests/             # WebSocket test suites (131 tests across auth, pub/sub, heartbeat, upgrade)
 │   │   └── index.ts           # WebSocket entrypoint & HTTP broadcast listener
 │   │
 │   └── frontend/              # High-performance React 19 + Vite Kanban SPA
@@ -117,7 +117,7 @@ trello/
 │       │   ├── lib/           # board-filters, date-urgency, dnd-math, kanban-api, org-api
 │       │   ├── pages/         # BoardCanvasPage, BoardsPage, LoginPage, SignupPage
 │       │   ├── store/         # useAuthStore, useOrgStore, useThemeStore (Zustand)
-│       │   └── tests/         # Unit, component, optimistic rollback, & adversarial suites (492 tests)
+│       │   └── tests/         # Unit, component, optimistic rollback, & adversarial suites (515 tests)
 │       └── index.html         # SPA entrypoint with FOUC prevention script
 │
 ├── packages/
@@ -331,26 +331,26 @@ Send JSON frames over the WebSocket connection:
 
 When actions occur via REST API or other clients, events are published to the board room topic (`board_<boardId>`):
 
-| Event Type              | Payload Fields                               | Description                              |
-| :---------------------- | :------------------------------------------- | :--------------------------------------- |
-| `user:joined`           | `{ userId, name, email, boardId }`           | Collaborator entered the board           |
-| `user:left`             | `{ userId, name, email, boardId }`           | Collaborator left or disconnected        |
-| `board:member_evicted`  | `{ userId, orgId, boardId }`                 | Member removed from organization         |
-| `board:evicted`         | `{ boardId, reason }`                        | Direct socket notification of eviction   |
-| `card:created`          | `{ cardData: Issue }`                        | New card added to a column               |
-| `card:updated`          | `{ cardId, updates: { ... } }`               | Card metadata, title, or fields modified |
-| `card:moved`            | `{ cardId, sourceList, destList, position }` | Card dragged across columns or reordered |
-| `card:deleted`          | `{ cardId }`                                 | Card removed from the board              |
-| `card:label_attached`   | `{ issueId, labelId, label }`                | Label attached to card                   |
-| `card:label_removed`    | `{ issueId, labelId }`                       | Label removed from card                  |
-| `checklist:created`     | `{ checklist }`                              | Checklist added to card                  |
-| `checklist:deleted`     | `{ checklistId, issueId }`                   | Checklist deleted                        |
-| `checklist_item:created`| `{ item }`                                   | Item added to checklist                  |
-| `checklist_item:updated`| `{ item }`                                   | Checklist item toggled or updated        |
-| `list:created`          | `{ listData: Section }`                      | New column added to the board            |
-| `list:updated`          | `{ listId, title, wipLimit?, isArchived? }`  | Column renamed or updated                |
-| `list:reordered`        | `{ listId, newPosition }`                    | Column reordered                         |
-| `list:deleted`          | `{ listId }`                                 | Column deleted                           |
+| Event Type               | Payload Fields                               | Description                              |
+| :----------------------- | :------------------------------------------- | :--------------------------------------- |
+| `user:joined`            | `{ userId, name, email, boardId }`           | Collaborator entered the board           |
+| `user:left`              | `{ userId, name, email, boardId }`           | Collaborator left or disconnected        |
+| `board:member_evicted`   | `{ userId, orgId, boardId }`                 | Member removed from organization         |
+| `board:evicted`          | `{ boardId, reason }`                        | Direct socket notification of eviction   |
+| `card:created`           | `{ cardData: Issue }`                        | New card added to a column               |
+| `card:updated`           | `{ cardId, updates: { ... } }`               | Card metadata, title, or fields modified |
+| `card:moved`             | `{ cardId, sourceList, destList, position }` | Card dragged across columns or reordered |
+| `card:deleted`           | `{ cardId }`                                 | Card removed from the board              |
+| `card:label_attached`    | `{ issueId, labelId, label }`                | Label attached to card                   |
+| `card:label_removed`     | `{ issueId, labelId }`                       | Label removed from card                  |
+| `checklist:created`      | `{ checklist }`                              | Checklist added to card                  |
+| `checklist:deleted`      | `{ checklistId, issueId }`                   | Checklist deleted                        |
+| `checklist_item:created` | `{ item }`                                   | Item added to checklist                  |
+| `checklist_item:updated` | `{ item }`                                   | Checklist item toggled or updated        |
+| `list:created`           | `{ listData: Section }`                      | New column added to the board            |
+| `list:updated`           | `{ listId, title, wipLimit?, isArchived? }`  | Column renamed or updated                |
+| `list:reordered`         | `{ listId, newPosition }`                    | Column reordered                         |
+| `list:deleted`           | `{ listId }`                                 | Column deleted                           |
 
 ### HTTP Endpoints on WebSocket Server
 
@@ -367,86 +367,86 @@ All protected routes require a Bearer token in the `Authorization` header:
 
 ### 🔐 Authentication & Profile
 
-| Method | Endpoint           | Description                                                  | Access        |
-| :----- | :----------------- | :----------------------------------------------------------- | :------------ |
-| `POST` | `/api/auth/signup` | Register a new user                                          | Public        |
-| `POST` | `/api/auth/login`  | Authenticate user (timing-attack resistant) and receive JWT  | Public        |
-| `GET`  | `/api/users/me`    | Fetch authenticated user profile                             | Authenticated |
+| Method | Endpoint           | Description                                                 | Access        |
+| :----- | :----------------- | :---------------------------------------------------------- | :------------ |
+| `POST` | `/api/auth/signup` | Register a new user                                         | Public        |
+| `POST` | `/api/auth/login`  | Authenticate user (timing-attack resistant) and receive JWT | Public        |
+| `GET`  | `/api/users/me`    | Fetch authenticated user profile                            | Authenticated |
 
 ### 🏢 Organizations & Memberships
 
-| Method   | Endpoint                   | Description                                                    | Access         |
-| :------- | :------------------------- | :------------------------------------------------------------- | :------------- |
-| `GET`    | `/api/orgs`                | List all organizations for current user                        | Authenticated  |
-| `POST`   | `/api/orgs`                | Create a new organization                                      | Authenticated  |
-| `GET`    | `/api/orgs/:orgId`         | Get details of a specific organization                         | Member         |
-| `PUT`    | `/api/orgs/:orgId`         | Update organization details                                    | Org Admin      |
-| `DELETE` | `/api/orgs/:orgId`         | Delete organization                                            | Org Admin      |
-| `GET`    | `/api/orgs/:orgId/members` | List members and their roles (Member only, 200 OK)             | Member         |
-| `POST`   | `/api/orgs/:orgId/members` | Invite a user to an organization                               | Org Admin      |
-| `PUT`    | `/api/orgs/:orgId/accept`  | Accept an organization invitation                              | Invitee        |
-| `PUT`    | `/api/orgs/:orgId/members` | Update a member's role                                         | Org Admin      |
-| `DELETE` | `/api/orgs/:orgId/members` | Remove user, leave org, or cancel/revoke pending invitations   | Member / Admin |
+| Method   | Endpoint                   | Description                                                  | Access         |
+| :------- | :------------------------- | :----------------------------------------------------------- | :------------- |
+| `GET`    | `/api/orgs`                | List all organizations for current user                      | Authenticated  |
+| `POST`   | `/api/orgs`                | Create a new organization                                    | Authenticated  |
+| `GET`    | `/api/orgs/:orgId`         | Get details of a specific organization                       | Member         |
+| `PUT`    | `/api/orgs/:orgId`         | Update organization details                                  | Org Admin      |
+| `DELETE` | `/api/orgs/:orgId`         | Delete organization                                          | Org Admin      |
+| `GET`    | `/api/orgs/:orgId/members` | List members and their roles (Member only, 200 OK)           | Member         |
+| `POST`   | `/api/orgs/:orgId/members` | Invite a user to an organization                             | Org Admin      |
+| `PUT`    | `/api/orgs/:orgId/accept`  | Accept an organization invitation                            | Invitee        |
+| `PUT`    | `/api/orgs/:orgId/members` | Update a member's role                                       | Org Admin      |
+| `DELETE` | `/api/orgs/:orgId/members` | Remove user, leave org, or cancel/revoke pending invitations | Member / Admin |
 
 ### 📋 Boards & Event Sync
 
-| Method   | Endpoint                                              | Description                                           | Access    |
-| :------- | :---------------------------------------------------- | :---------------------------------------------------- | :-------- |
-| `GET`    | `/api/orgs/:orgId/boards`                             | List all boards in an organization                    | Member    |
-| `POST`   | `/api/orgs/:orgId/boards`                             | Create a new board                                    | Member    |
-| `GET`    | `/api/boards/:boardId`                                | Get board details with sections and issues            | Member    |
-| `PUT`    | `/api/boards/:boardId`                                | Rename / update board details                         | Member    |
-| `DELETE` | `/api/boards/:boardId`                                | Delete board and associated data                      | Org Admin |
-| `GET`    | `/api/boards/:boardId/events`<br>`/api/boards/:id/events` | Catch-up sync missed board events (`?sinceSeq=&limit=`) | Member |
+| Method   | Endpoint                                                  | Description                                             | Access    |
+| :------- | :-------------------------------------------------------- | :------------------------------------------------------ | :-------- |
+| `GET`    | `/api/orgs/:orgId/boards`                                 | List all boards in an organization                      | Member    |
+| `POST`   | `/api/orgs/:orgId/boards`                                 | Create a new board                                      | Member    |
+| `GET`    | `/api/boards/:boardId`                                    | Get board details with sections and issues              | Member    |
+| `PUT`    | `/api/boards/:boardId`                                    | Rename / update board details                           | Member    |
+| `DELETE` | `/api/boards/:boardId`                                    | Delete board and associated data                        | Org Admin |
+| `GET`    | `/api/boards/:boardId/events`<br>`/api/boards/:id/events` | Catch-up sync missed board events (`?sinceSeq=&limit=`) | Member    |
 
 ### 📑 Sections (Columns)
 
-| Method          | Endpoint                        | Description                                                                                     | Access    |
-| :-------------- | :------------------------------ | :---------------------------------------------------------------------------------------------- | :-------- |
-| `GET`           | `/api/boards/:boardId/sections` | List sections for a board (sorted by `position`)                                                | Member    |
-| `POST`          | `/api/boards/:boardId/sections` | Create a new section (`list:created`, auto-spaced `position`)                                    | Member    |
-| `PUT` / `PATCH` | `/api/sections/:sectionId`      | Rename (`title`), set `wipLimit`, archive, or reorder (`position` / `newPosition`)              | Member    |
-| `DELETE`        | `/api/sections/:sectionId`      | Delete section; requires `targetSectionId` if section has issues (`list:deleted`)                | Org Admin |
+| Method          | Endpoint                        | Description                                                                        | Access    |
+| :-------------- | :------------------------------ | :--------------------------------------------------------------------------------- | :-------- |
+| `GET`           | `/api/boards/:boardId/sections` | List sections for a board (sorted by `position`)                                   | Member    |
+| `POST`          | `/api/boards/:boardId/sections` | Create a new section (`list:created`, auto-spaced `position`)                      | Member    |
+| `PUT` / `PATCH` | `/api/sections/:sectionId`      | Rename (`title`), set `wipLimit`, archive, or reorder (`position` / `newPosition`) | Member    |
+| `DELETE`        | `/api/sections/:sectionId`      | Delete section; requires `targetSectionId` if section has issues (`list:deleted`)  | Org Admin |
 
 ### 📌 Issues (Cards) & Assignments
 
-| Method          | Endpoint                                                              | Description                                                                     | Access |
-| :-------------- | :-------------------------------------------------------------------- | :------------------------------------------------------------------------------ | :----- |
-| `GET`           | `/api/sections/:sectionId/issues`<br>`/api/sections/:sectionId/cards` | List cards in a section                                                         | Member |
-| `POST`          | `/api/sections/:sectionId/issues`<br>`/api/sections/:sectionId/cards` | Create a card (`card:created`, auto-spaced `position`)                          | Member |
-| `GET`           | `/api/issues/:issueId`<br>`/api/cards/:issueId` / `:id`               | Get full card details                                                           | Member |
-| `PATCH`         | `/api/issues/:issueId`<br>`/api/cards/:issueId` / `:id`               | Update card title, priority, due date, start date, archive status, or move      | Member |
-| `PATCH`         | `/api/cards/:issueId/move`<br>`/api/cards/:id/move`                   | Explicitly move card across sections or positions (`card:moved`)                | Member |
-| `DELETE`        | `/api/issues/:issueId`<br>`/api/cards/:issueId` / `:id`               | Delete card (`card:deleted`)                                                    | Member |
-| `POST`          | `/api/issues/:issueId/assignees`                                      | Assign users to card with email deduplication                                  | Member |
-| `DELETE`        | `/api/issues/:issueId/assignees`                                      | Remove user assignment                                                          | Member |
+| Method   | Endpoint                                                              | Description                                                                | Access |
+| :------- | :-------------------------------------------------------------------- | :------------------------------------------------------------------------- | :----- |
+| `GET`    | `/api/sections/:sectionId/issues`<br>`/api/sections/:sectionId/cards` | List cards in a section                                                    | Member |
+| `POST`   | `/api/sections/:sectionId/issues`<br>`/api/sections/:sectionId/cards` | Create a card (`card:created`, auto-spaced `position`)                     | Member |
+| `GET`    | `/api/issues/:issueId`<br>`/api/cards/:issueId` / `:id`               | Get full card details                                                      | Member |
+| `PATCH`  | `/api/issues/:issueId`<br>`/api/cards/:issueId` / `:id`               | Update card title, priority, due date, start date, archive status, or move | Member |
+| `PATCH`  | `/api/cards/:issueId/move`<br>`/api/cards/:id/move`                   | Explicitly move card across sections or positions (`card:moved`)           | Member |
+| `DELETE` | `/api/issues/:issueId`<br>`/api/cards/:issueId` / `:id`               | Delete card (`card:deleted`)                                               | Member |
+| `POST`   | `/api/issues/:issueId/assignees`                                      | Assign users to card with email deduplication                              | Member |
+| `DELETE` | `/api/issues/:issueId/assignees`                                      | Remove user assignment                                                     | Member |
 
 ### 🏷️ Labels
 
-| Method   | Endpoint                                  | Description                                   | Access    |
-| :------- | :---------------------------------------- | :-------------------------------------------- | :-------- |
-| `POST`   | `/api/boards/:boardId/labels`             | Create a new label on a board                 | Member    |
-| `GET`    | `/api/boards/:boardId/labels`             | List all labels defined on a board            | Member    |
-| `POST`   | `/api/issues/:issueId/labels`             | Attach a label to an issue/card               | Member    |
-| `DELETE` | `/api/issues/:issueId/labels/:labelId`    | Detach a label from an issue/card             | Member    |
+| Method   | Endpoint                               | Description                        | Access |
+| :------- | :------------------------------------- | :--------------------------------- | :----- |
+| `POST`   | `/api/boards/:boardId/labels`          | Create a new label on a board      | Member |
+| `GET`    | `/api/boards/:boardId/labels`          | List all labels defined on a board | Member |
+| `POST`   | `/api/issues/:issueId/labels`          | Attach a label to an issue/card    | Member |
+| `DELETE` | `/api/issues/:issueId/labels/:labelId` | Detach a label from an issue/card  | Member |
 
 ### ✅ Checklists & Subtasks
 
-| Method   | Endpoint                              | Description                                      | Access    |
-| :------- | :------------------------------------ | :----------------------------------------------- | :-------- |
-| `POST`   | `/api/issues/:issueId/checklists`     | Create a checklist on a card                     | Member    |
-| `POST`   | `/api/checklists/:checklistId/items`  | Add an item/subtask to a checklist               | Member    |
-| `PATCH`  | `/api/checklists/items/:itemId`       | Update checklist item content, completion, or due date | Member |
-| `DELETE` | `/api/checklists/:checklistId`        | Delete an entire checklist                       | Member    |
+| Method   | Endpoint                             | Description                                            | Access |
+| :------- | :----------------------------------- | :----------------------------------------------------- | :----- |
+| `POST`   | `/api/issues/:issueId/checklists`    | Create a checklist on a card                           | Member |
+| `POST`   | `/api/checklists/:checklistId/items` | Add an item/subtask to a checklist                     | Member |
+| `PATCH`  | `/api/checklists/items/:itemId`      | Update checklist item content, completion, or due date | Member |
+| `DELETE` | `/api/checklists/:checklistId`       | Delete an entire checklist                             | Member |
 
 ### 💬 Threaded Comments
 
-| Method   | Endpoint                        | Description                                     | Access         |
-| :------- | :------------------------------ | :---------------------------------------------- | :------------- |
-| `GET`    | `/api/issues/:issueId/comments` | Get nested comment tree for an issue            | Member         |
-| `POST`   | `/api/issues/:issueId/comments` | Post a comment or reply to an existing one      | Member         |
-| `PUT`    | `/api/comments/:commentId`      | Edit a comment (within 24-hour limit, 200 OK)   | Author         |
-| `DELETE` | `/api/comments/:commentId`      | Delete a comment (200 OK)                       | Author / Admin |
+| Method   | Endpoint                        | Description                                   | Access         |
+| :------- | :------------------------------ | :-------------------------------------------- | :------------- |
+| `GET`    | `/api/issues/:issueId/comments` | Get nested comment tree for an issue          | Member         |
+| `POST`   | `/api/issues/:issueId/comments` | Post a comment or reply to an existing one    | Member         |
+| `PUT`    | `/api/comments/:commentId`      | Edit a comment (within 24-hour limit, 200 OK) | Author         |
+| `DELETE` | `/api/comments/:commentId`      | Delete a comment (200 OK)                     | Author / Admin |
 
 ---
 
@@ -509,8 +509,8 @@ Generate Prisma Client and apply migrations:
 
 ```bash
 # Apply migrations and generate Prisma client
-bun --filter db exec prisma migrate dev
-bun --filter db exec prisma generate
+bun run db:migrate # or: bun --filter db migrate:dev
+bun run db:generate # or: bun --filter db generate
 ```
 
 ### 4. Run Development Servers
@@ -526,7 +526,7 @@ bun run dev --filter=websockets
 
 Run each command in its own terminal. Configure both apps with matching `jwt_key` values. Set the same `INTERNAL_BROADCAST_SECRET` in both, and set the backend’s `WS_INTERNAL_URL` to the WebSocket service address, for example `http://127.0.0.1:3001`. The internal secret can fall back to the JWT secret, but configuring it separately is preferable.
 
-*(Alternatively, you can start both services concurrently from the repo root with `bun run dev`)*
+_(Alternatively, you can start both services concurrently from the repo root with `bun run dev`)_
 
 ---
 
@@ -543,6 +543,7 @@ This works whether the two processes are on the same machine or separate machine
 ### 🛡️ Outbox Delivery Resilience & Offline Fail-Safety
 
 In production, network boundaries and service lifecycles can decouple:
+
 - **Startup Race Conditions & Restarts**: When backend containers boot before the WebSocket service, or during rolling updates and transient network partitions, the WebSocket HTTP bridge may be temporarily unreachable.
 - **Graceful Fail-Safe Delivery**: `WebSocketBroadcaster.broadcast()` catches connection and transport errors cleanly without throwing unhandled exceptions or crashing the backend process. Local in-process `EventEmitter` listeners still receive the broadcast (`emitted = true`), and the method returns `false`.
 - **Transactional Outbox Coordination**: The transactional outbox worker explicitly checks this `false` return value. Rather than dropping the event or assuming delivery, it retains the event in `published: false` status, allowing the background lease worker to reliably retry delivery via `retryPendingEvents()` once the WebSocket service is back online.
@@ -564,19 +565,19 @@ One caveat: user eviction also currently uses the single WebSocket HTTP target, 
 
 ## 🧪 Testing
 
-The repository features comprehensive automated testing using Bun's native test runner (`bun:test`), totaling **799 automated tests** across all monorepo packages:
+The repository features comprehensive automated testing using Bun's native test runner (`bun:test`), totaling **826 automated tests** across all monorepo packages:
 
 ```bash
-# 1. Run all tests across the monorepo (799 tests)
+# 1. Run all tests across the monorepo (826 tests)
 bun run test
 
-# 2. Run Frontend unit, component, & adversarial tests (492 tests)
+# 2. Run Frontend unit, component, & adversarial tests (515 tests)
 bun test --cwd apps/frontend
 
-# 3. Run WebSocket unit and integration tests (128 tests)
+# 3. Run WebSocket unit and integration tests (131 tests)
 bun test --cwd apps/websockets
 
-# 4. Run Backend unit tests (helpers, middleware, Zod schemas, parity, & broadcast dispatches) (179 tests)
+# 4. Run Backend unit tests (helpers, middleware, Zod schemas, parity, & broadcast dispatches) (180 tests)
 bun test apps/backend/tests/unit
 
 # 5. Run Full Backend integration tests (requires PostgreSQL test database)
@@ -619,7 +620,7 @@ bun run lint
 - [x] React 19 frontend SPA with drag-and-drop Kanban board (`dnd-kit`), optimistic updates, and WebSocket synchronization
 - [x] Multi-criteria board search, filter bar, and timezone-safe due date urgency system
 - [x] Theme engine with dark mode, system preference detection, and FOUC prevention
-- [x] Comprehensive test suites (128 WebSocket tests + 179 Backend unit tests + 492 Frontend tests = 799 tests across the monorepo)
+- [x] Comprehensive test suites (131 WebSocket tests + 180 Backend unit tests + 515 Frontend tests = 826 tests across the monorepo)
 - [ ] GitHub webhook integration for automated card syncing
 - [ ] Card activity log and audit history
 - [ ] File attachments
