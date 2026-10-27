@@ -11,7 +11,8 @@ export async function inviteUserHandler(req: Request, res: Response)
     }).safeParse(req.params);
 
     const result2 = zod.object({
-        email: zod.email()
+        email: zod.email(),
+        role: zod.enum(["admin", "employee", "contributor"]).optional().default("contributor")
     }).safeParse(req.body);
 
     if (!result1.success || !result2.success)
@@ -73,7 +74,7 @@ export async function inviteUserHandler(req: Request, res: Response)
         data: {
             userId: user2.id,
             orgId: result1.data.orgId,
-            role: "contributor"
+            role: result2.data.role
         }
     })
 
