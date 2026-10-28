@@ -12,7 +12,7 @@ export interface WebSocketData
     lastPong?: number;
 }
 
-export type ClientAction = "join" | "leave" | "ping" | "pong" | "heartbeat" | "heartbeat_ack" | "subscribe" | "unsubscribe";
+export type ClientAction = "join" | "leave" | "ping" | "pong" | "heartbeat" | "heartbeat_ack" | "subscribe" | "unsubscribe" | "subscribe_user";
 
 export interface ClientMessage
 {
@@ -22,8 +22,22 @@ export interface ClientMessage
     topic?: string;
     roomId?: string;
     name?: string;
+    userId?: string;
     [key: string]: unknown;
 }
 
-export { formatBoardTopic, cleanBoardId } from "realtime";
-export type { BroadcastEvent, BroadcastOptions, CardMovedPayload, CardCreatedPayload, CardUpdatedPayload, CardDeletedPayload, ListReorderedPayload, UserJoinedPayload, UserLeftPayload } from "realtime";
+export { formatBoardTopic, cleanBoardId, formatUserTopic, cleanUserId } from "realtime";
+export type {
+    BroadcastEvent,
+    BroadcastOptions,
+    CardMovedPayload,
+    CardCreatedPayload,
+    CardUpdatedPayload,
+    CardDeletedPayload,
+    ListReorderedPayload,
+    UserJoinedPayload,
+    UserLeftPayload,
+    UserEventType,
+    NotificationType,
+    UserNotificationPayload
+} from "realtime";

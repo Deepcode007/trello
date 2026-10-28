@@ -15,6 +15,11 @@ export type RoleUpdateHandler = (options: {
     role: string;
 }) => boolean;
 
+export type NotifyUsersHandler = (options: {
+    userIds: string[];
+    event: { type: string; payload: unknown };
+}) => Promise<boolean> | boolean;
+
 type InternalServer = { publish?: (topic: string, message: string) => number };
 let singleton: WebSocketBroadcaster | undefined;
 
@@ -25,6 +30,7 @@ export class WebSocketBroadcaster extends EventEmitter
     private customPort = false;
     private evictionHandler: EvictionHandler | null = null;
     private roleUpdateHandler: RoleUpdateHandler | null = null;
+    private notifyUsersHandler: NotifyUsersHandler | null = null;
 
     public static getInstance(): WebSocketBroadcaster
     {
@@ -43,6 +49,8 @@ export class WebSocketBroadcaster extends EventEmitter
     public getEvictionHandler(): EvictionHandler | null { return this.evictionHandler; }
     public setRoleUpdateHandler(handler: RoleUpdateHandler): void { this.roleUpdateHandler = handler; }
     public getRoleUpdateHandler(): RoleUpdateHandler | null { return this.roleUpdateHandler; }
+    public setNotifyUsersHandler(handler: NotifyUsersHandler): void { this.notifyUsersHandler = handler; }
+    public getNotifyUsersHandler(): NotifyUsersHandler | null { return this.notifyUsersHandler; }
 
     public publish(topic: string, message: unknown): number
     {
@@ -163,6 +171,12 @@ export class WebSocketBroadcaster extends EventEmitter
         {
             this.emit("notification", { userId, event });
             this.emit(`user:${userId}`, event);
+        }
+
+        if (this.notifyUsersHandler)
+        {
+            try { return Boolean(await this.notifyUsersHandler({ userIds: validUserIds, event })); }
+            catch { return false; }
         }
 
         try

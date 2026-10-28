@@ -8,7 +8,9 @@ import
     type WebSocketData,
     type ClientMessage,
     formatBoardTopic,
-    cleanBoardId
+    cleanBoardId,
+    formatUserTopic,
+    cleanUserId
 } from "./types/events";
 
 export type BoardAccessChecker = (userId: string, boardId: string) => Promise<boolean> | boolean;
@@ -486,6 +488,52 @@ export async function evictUserSockets(
     return evictedCount;
 }
 
+export function notifyUserSockets(
+    server: Pick<Server<WebSocketData>, "publish">,
+    userIds: string[],
+    event: { type: string; payload: unknown }
+): { success: boolean; deliveredCount: number; recipientCount: number }
+{
+    const payloadStr = typeof event === "string" ? event : JSON.stringify(event);
+    let deliveredCount = 0;
+    let recipientCount = 0;
+
+    for (const rawUserId of userIds)
+    {
+        if (!rawUserId || typeof rawUserId !== "string" || !rawUserId.trim()) continue;
+        const userId = rawUserId.trim();
+        const topic = formatUserTopic(userId);
+        if (!topic) continue;
+
+        if (server && typeof server.publish === "function")
+        {
+            const sent = server.publish(topic, payloadStr);
+            deliveredCount += (typeof sent === "number" ? sent : 0);
+        }
+
+        wsBroadcaster.emit("notifyUser", { userId, topic, event, raw: payloadStr });
+        wsBroadcaster.emit(`user:${userId}`, event);
+
+        const sockets = userSocketRegistry.get(userId);
+        if (sockets && sockets.size > 0)
+        {
+            for (const sock of sockets)
+            {
+                if (sock?.data?.subscriptions?.has(topic))
+                {
+                    recipientCount++;
+                    if (typeof (sock.send as any)?.mock !== "undefined")
+                    {
+                        try { sock.send(payloadStr); } catch { }
+                    }
+                }
+            }
+        }
+    }
+
+    return { success: true, deliveredCount, recipientCount };
+}
+
 export function handleUpgradeRequest(
     req: Request,
     server: Pick<Server<WebSocketData>, "upgrade" | "publish" | "port">,
@@ -649,6 +697,96 @@ export function handleUpgradeRequest(
         })();
     }
 
+    // 1d. Internal administrative endpoint to notify users via user-topic WebSocket delivery
+    if (req.method === "POST" && url.pathname === "/internal/notify-users")
+    {
+        return (async () =>
+        {
+            try
+            {
+                const expectedSecret = env.INTERNAL_BROADCAST_SECRET || jwtSecret;
+                const internalSecret = req.headers.get("x-internal-secret");
+                if (expectedSecret && internalSecret !== expectedSecret)
+                {
+                    return new Response(JSON.stringify({ error: "Forbidden: invalid internal secret" }), {
+                        status: 403,
+                        headers: { "Content-Type": "application/json" }
+                    });
+                }
+
+                const body = await req.json() as {
+                    userIds?: unknown;
+                    event?: {
+                        type?: unknown;
+                        payload?: unknown;
+                    };
+                };
+
+                if (!body || typeof body !== "object" || Array.isArray(body))
+                {
+                    return new Response(JSON.stringify({ error: "Invalid JSON payload: expected object" }), {
+                        status: 400,
+                        headers: { "Content-Type": "application/json" }
+                    });
+                }
+
+                if (!body.userIds || !Array.isArray(body.userIds) || body.userIds.length === 0)
+                {
+                    return new Response(JSON.stringify({ error: "Missing or invalid userIds: expected non-empty array" }), {
+                        status: 400,
+                        headers: { "Content-Type": "application/json" }
+                    });
+                }
+
+                const invalidUserId = body.userIds.some((id: any) => typeof id !== "string" || !id.trim());
+                if (invalidUserId)
+                {
+                    return new Response(JSON.stringify({ error: "Invalid userIds: all entries must be non-empty strings" }), {
+                        status: 400,
+                        headers: { "Content-Type": "application/json" }
+                    });
+                }
+
+                if (!body.event || typeof body.event !== "object" || Array.isArray(body.event))
+                {
+                    return new Response(JSON.stringify({ error: "Missing or invalid event: expected object" }), {
+                        status: 400,
+                        headers: { "Content-Type": "application/json" }
+                    });
+                }
+
+                if (!body.event.type || typeof body.event.type !== "string" || !body.event.type.trim())
+                {
+                    return new Response(JSON.stringify({ error: "Missing or invalid event.type: expected non-empty string" }), {
+                        status: 400,
+                        headers: { "Content-Type": "application/json" }
+                    });
+                }
+
+                if (body.event.payload === undefined)
+                {
+                    return new Response(JSON.stringify({ error: "Missing event.payload" }), {
+                        status: 400,
+                        headers: { "Content-Type": "application/json" }
+                    });
+                }
+
+                const result = notifyUserSockets(server, body.userIds as string[], body.event as { type: string; payload: unknown });
+
+                return new Response(JSON.stringify({ ...result }), {
+                    status: 200,
+                    headers: { "Content-Type": "application/json" }
+                });
+            } catch
+            {
+                return new Response(JSON.stringify({ error: "Invalid JSON payload" }), {
+                    status: 400,
+                    headers: { "Content-Type": "application/json" }
+                });
+            }
+        })();
+    }
+
     // 2. Health check route
     if (req.method === "GET" && (url.pathname === "/health" || url.pathname === "/api/health"))
     {
@@ -713,7 +851,7 @@ export async function handleWebSocketMessage(
         ws.data.isAlive = true;
         ws.data.lastPong = Date.now();
     }
-    if (!ws?.data?.subscriptions)
+    if (!ws?.data?.subscriptions || !ws?.data?.userId || typeof ws.data.userId !== "string" || !ws.data.userId.trim())
     {
         try
         {
@@ -940,6 +1078,57 @@ export async function handleWebSocketMessage(
             });
             server.publish(topic, leaveEvent);
         }
+    } else if (action === "subscribe_user")
+    {
+        if (!ws?.data?.userId || typeof ws.data.userId !== "string" || !ws.data.userId.trim())
+        {
+            ws.send(JSON.stringify({ error: "Unauthenticated socket session" }));
+            return;
+        }
+
+        const userId = ws.data.userId.trim();
+
+        // Security check: client must NOT be allowed to subscribe to someone else's topic
+        if (msg.userId && typeof msg.userId === "string" && msg.userId.trim() !== userId)
+        {
+            ws.send(JSON.stringify({ error: "Forbidden: cannot subscribe to another user's topic" }));
+            return;
+        }
+
+        const topic = formatUserTopic(userId);
+        if (!topic)
+        {
+            ws.send(JSON.stringify({ error: "Invalid user topic" }));
+            return;
+        }
+
+        if (ws.data.subscriptions.has(topic))
+        {
+            ws.send(JSON.stringify({
+                type: "user_subscribed",
+                userId,
+                topic,
+                alreadySubscribed: true
+            }));
+            return;
+        }
+
+        ws.subscribe(topic);
+        ws.data.subscriptions.add(topic);
+
+        let set = userSocketRegistry.get(userId);
+        if (!set)
+        {
+            set = new Set();
+            userSocketRegistry.set(userId, set);
+        }
+        set.add(ws as unknown as ServerWebSocket<WebSocketData>);
+
+        ws.send(JSON.stringify({
+            type: "user_subscribed",
+            userId,
+            topic
+        }));
     } else if (action === "ping" || action === "heartbeat")
     {
         if (ws?.data)
@@ -996,7 +1185,7 @@ export function handleWebSocketClose(
                 const remainingSockets = cleanUid ? userSocketRegistry.get(cleanUid) : null;
                 const stillInTopic = remainingSockets && Array.from(remainingSockets).some(s => s.data?.subscriptions?.has(topic));
 
-                if (!stillInTopic)
+                if (!stillInTopic && topic.startsWith("board_"))
                 {
                     server.publish(topic, JSON.stringify({
                         type: "user:left",
@@ -1218,6 +1407,7 @@ export function createWebSocketServer(options: WebSocketServerOptions = {}): Ser
     wsBroadcaster.setServer(server);
     wsBroadcaster.setEvictionHandler((opts) => evictUserSockets(server, opts));
     wsBroadcaster.setRoleUpdateHandler((opts) => updateUserRole(opts.userId, opts.orgId, opts.role));
+    wsBroadcaster.setNotifyUsersHandler((opts) => notifyUserSockets(server, opts.userIds, opts.event).success);
 
     return server;
 }

@@ -291,3 +291,48 @@ export function cleanBoardId(topicOrBoardId: string): string
     const trimmed = topicOrBoardId.trim();
     return trimmed.startsWith("board_") ? trimmed.slice(6) : trimmed;
 }
+
+// -------------------------------------------------------------
+// User-Level Events & Notification Payloads
+// -------------------------------------------------------------
+
+export type NotificationType =
+    | "org:invitation_received"
+    | "org:invitation_accepted"
+    | "org:role_changed"
+    | "org:member_removed"
+    | "mention:comment"
+    | "comment:reply"
+    | "card:assigned";
+
+export type UserEventType =
+    | "user:notification"
+    | "user:org_invitation_received"
+    | "user:org_invitation_accepted"
+    | "user:org_role_changed"
+    | "user:org_member_removed"
+    | "user:org_membership_updated";
+
+export interface UserNotificationPayload
+{
+    notification: {
+        id?: string;
+        type: NotificationType;
+        data: Record<string, unknown>;
+        createdAt: string;
+    };
+}
+
+export function formatUserTopic(userId: string): string
+{
+    if (!userId || typeof userId !== "string" || !userId.trim()) return "";
+    const trimmed = userId.trim();
+    return `user_${trimmed}`;
+}
+
+export function cleanUserId(topicOrUserId: string): string
+{
+    if (!topicOrUserId || typeof topicOrUserId !== "string" || !topicOrUserId.trim()) return "";
+    const trimmed = topicOrUserId.trim();
+    return trimmed.startsWith("user_") ? trimmed.slice(5) : trimmed;
+}

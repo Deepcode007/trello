@@ -1,13 +1,7 @@
 import { prisma } from "db/prisma";
 
-export type NotificationType =
-    | "org:invitation_received"
-    | "org:invitation_accepted"
-    | "org:role_changed"
-    | "org:member_removed"
-    | "mention:comment"
-    | "comment:reply"
-    | "card:assigned";
+import type { NotificationType } from "realtime";
+export type { NotificationType };
 
 export interface CreateNotificationParams
 {
