@@ -28,8 +28,10 @@ export async function createIssue(req: Request, res: Response)
             id: result2.data.boardId
         },
         select: {
+            orgId: true,
             org: {
                 select: {
+                    id: true,
                     members: {
                         where: {
                             userId: req.id,
@@ -81,6 +83,36 @@ export async function createIssue(req: Request, res: Response)
             }
         })
     );
+
+    const orgId = user.orgId;
+    let cardCount = await prisma.issues.count({
+        where: { boardId: result2.data.boardId }
+    });
+
+    let memberUserIds: string[] = [];
+    const acceptedMembers = await prisma.membership.findMany({
+        where: { orgId, accepted: true },
+        select: { userId: true }
+    });
+    memberUserIds = acceptedMembers.map((m: any) => m.userId).filter(Boolean);
+
+    if (memberUserIds.length > 0)
+    {
+        try
+        {
+            await wsBroadcaster.notifyUsers(memberUserIds, {
+                type: "user:org_board_cards_changed",
+                payload: {
+                    orgId,
+                    boardId: result2.data.boardId,
+                    cardCount
+                }
+            });
+        } catch (err)
+        {
+            console.warn("[createIssue] Failed to dispatch card count changed event:", err);
+        }
+    }
 
     return res.status(201).json({
         success: true,

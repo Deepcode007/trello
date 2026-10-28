@@ -44,6 +44,14 @@ export async function deleteBoard(req: Request, res: Response)
 
     if (!user) throw new Forbidden("Employee/Admin access only");
 
+    const orgId = board.org.id;
+    let memberUserIds: string[] = [];
+    const acceptedMembers = await prisma.membership.findMany({
+        where: { orgId, accepted: true },
+        select: { userId: true }
+    });
+    memberUserIds = acceptedMembers.map((m: any) => m.userId).filter(Boolean);
+
     await prisma.boards.delete({
         where: {
             id: result.data.boardId
@@ -54,6 +62,20 @@ export async function deleteBoard(req: Request, res: Response)
         type: "board:deleted",
         payload: { boardId: result.data.boardId }
     }, { skipRecording: true });
+
+    try
+    {
+        await wsBroadcaster.notifyUsers(memberUserIds, {
+            type: "user:org_board_deleted",
+            payload: {
+                orgId,
+                boardId: result.data.boardId
+            }
+        });
+    } catch (err)
+    {
+        console.warn("[deleteBoard] Failed to dispatch user notification:", err);
+    }
 
     return res.status(200).json({
         success: true,

@@ -24,8 +24,10 @@ export async function deleteIssue(req: Request, res: Response)
             boardId: true,
             board: {
                 select: {
+                    orgId: true,
                     org: {
                         select: {
+                            id: true,
                             members: {
                                 where: {
                                     userId: req.id,
@@ -50,6 +52,36 @@ export async function deleteIssue(req: Request, res: Response)
         deletedIssue => ({ type: "card:deleted", payload: { cardId: deletedIssue.id } }),
         tx => tx.issues.delete({ where: { id: result.data.issueId } })
     );
+
+    const orgId = (issue.board as any).orgId ?? issue.board.org?.id;
+    let cardCount = await prisma.issues.count({
+        where: { boardId: issue.boardId }
+    });
+
+    let memberUserIds: string[] = [];
+    const acceptedMembers = await prisma.membership.findMany({
+        where: { orgId, accepted: true },
+        select: { userId: true }
+    });
+    memberUserIds = acceptedMembers.map((m: any) => m.userId).filter(Boolean);
+
+    if (memberUserIds.length > 0)
+    {
+        try
+        {
+            await wsBroadcaster.notifyUsers(memberUserIds, {
+                type: "user:org_board_cards_changed",
+                payload: {
+                    orgId,
+                    boardId: issue.boardId,
+                    cardCount
+                }
+            });
+        } catch (err)
+        {
+            console.warn("[deleteIssue] Failed to dispatch card count changed event:", err);
+        }
+    }
 
     return res.status(200).json({
         success: true,

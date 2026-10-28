@@ -474,4 +474,224 @@ describe("Phase 3: WebSocket Extension — User Topics Delivery", () =>
         expect(bMsgs.some(m => m.payload?.notification?.id === "broadcast-to-1-and-2")).toBe(true);
         expect(cMsgs.some(m => m.payload?.notification?.id === "broadcast-to-1-and-2")).toBe(false);
     });
+
+    // -------------------------------------------------------------
+    // Scenario 9: user:org_board_created delivery to multi-tab users
+    // -------------------------------------------------------------
+    it("9. POST /internal/notify-users delivers user:org_board_created to multiple tabs", async () =>
+    {
+        const server = createMockServer();
+        const tab1 = createMockSocket("user_tab", "tab@test.com", "Tab User");
+        const tab2 = createMockSocket("user_tab", "tab@test.com", "Tab User");
+
+        await handleWebSocketMessage(tab1, server, JSON.stringify({ action: "subscribe_user" }));
+        await handleWebSocketMessage(tab2, server, JSON.stringify({ action: "subscribe_user" }));
+
+        const boardCreatedEvent = {
+            type: "user:org_board_created",
+            payload: {
+                orgId: "org-test-1",
+                board: {
+                    id: "board-new-1",
+                    title: "Brand New Board",
+                    columnCount: 0
+                }
+            }
+        };
+
+        const req = new Request("http://localhost:3001/internal/notify-users", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "x-internal-secret": JWT_SECRET
+            },
+            body: JSON.stringify({
+                userIds: ["user_tab"],
+                event: boardCreatedEvent
+            })
+        });
+
+        const res = await handleUpgradeRequest(req, server as any, JWT_SECRET);
+        expect(res?.status).toBe(200);
+
+        const tab1Msgs = tab1.getSentMessages().map(m => JSON.parse(m));
+        const tab2Msgs = tab2.getSentMessages().map(m => JSON.parse(m));
+
+        expect(tab1Msgs.some(m => m.type === "user:org_board_created" && m.payload.board.id === "board-new-1")).toBe(true);
+        expect(tab2Msgs.some(m => m.type === "user:org_board_created" && m.payload.board.id === "board-new-1")).toBe(true);
+    });
+
+    // -------------------------------------------------------------
+    // Scenario 10: user:org_board_columns_changed delivery to multi-tab users
+    // -------------------------------------------------------------
+    it("10. POST /internal/notify-users delivers user:org_board_columns_changed to multiple tabs", async () =>
+    {
+        const server = createMockServer();
+        const tab1 = createMockSocket("user_cols", "cols@test.com", "Cols User");
+        const tab2 = createMockSocket("user_cols", "cols@test.com", "Cols User");
+
+        await handleWebSocketMessage(tab1, server, JSON.stringify({ action: "subscribe_user" }));
+        await handleWebSocketMessage(tab2, server, JSON.stringify({ action: "subscribe_user" }));
+
+        const columnsChangedEvent = {
+            type: "user:org_board_columns_changed",
+            payload: {
+                orgId: "org-test-1",
+                boardId: "board-100",
+                columnCount: 5
+            }
+        };
+
+        const req = new Request("http://localhost:3001/internal/notify-users", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "x-internal-secret": JWT_SECRET
+            },
+            body: JSON.stringify({
+                userIds: ["user_cols"],
+                event: columnsChangedEvent
+            })
+        });
+
+        const res = await handleUpgradeRequest(req, server as any, JWT_SECRET);
+        expect(res?.status).toBe(200);
+
+        const tab1Msgs = tab1.getSentMessages().map(m => JSON.parse(m));
+        const tab2Msgs = tab2.getSentMessages().map(m => JSON.parse(m));
+
+        expect(tab1Msgs.some(m => m.type === "user:org_board_columns_changed" && m.payload.columnCount === 5)).toBe(true);
+        expect(tab2Msgs.some(m => m.type === "user:org_board_columns_changed" && m.payload.columnCount === 5)).toBe(true);
+    });
+
+    // -------------------------------------------------------------
+    // Scenario 11: user:org_board_deleted delivery to multi-tab users
+    // -------------------------------------------------------------
+    it("11. POST /internal/notify-users delivers user:org_board_deleted to multiple tabs", async () =>
+    {
+        const server = createMockServer();
+        const tab1 = createMockSocket("user_del", "del@test.com", "Del User");
+        const tab2 = createMockSocket("user_del", "del@test.com", "Del User");
+
+        await handleWebSocketMessage(tab1, server, JSON.stringify({ action: "subscribe_user" }));
+        await handleWebSocketMessage(tab2, server, JSON.stringify({ action: "subscribe_user" }));
+
+        const boardDeletedEvent = {
+            type: "user:org_board_deleted",
+            payload: {
+                orgId: "org-test-1",
+                boardId: "board-to-delete"
+            }
+        };
+
+        const req = new Request("http://localhost:3001/internal/notify-users", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "x-internal-secret": JWT_SECRET
+            },
+            body: JSON.stringify({
+                userIds: ["user_del"],
+                event: boardDeletedEvent
+            })
+        });
+
+        const res = await handleUpgradeRequest(req, server as any, JWT_SECRET);
+        expect(res?.status).toBe(200);
+
+        const tab1Msgs = tab1.getSentMessages().map(m => JSON.parse(m));
+        const tab2Msgs = tab2.getSentMessages().map(m => JSON.parse(m));
+
+        expect(tab1Msgs.some(m => m.type === "user:org_board_deleted" && m.payload.boardId === "board-to-delete")).toBe(true);
+        expect(tab2Msgs.some(m => m.type === "user:org_board_deleted" && m.payload.boardId === "board-to-delete")).toBe(true);
+    });
+
+    // -------------------------------------------------------------
+    // Scenario 12: user:org_board_cards_changed delivery to multi-tab users
+    // -------------------------------------------------------------
+    it("12. POST /internal/notify-users delivers user:org_board_cards_changed to multiple tabs", async () =>
+    {
+        const server = createMockServer();
+        const tab1 = createMockSocket("user_cards", "cards@test.com", "Cards User");
+        const tab2 = createMockSocket("user_cards", "cards@test.com", "Cards User");
+
+        await handleWebSocketMessage(tab1, server, JSON.stringify({ action: "subscribe_user" }));
+        await handleWebSocketMessage(tab2, server, JSON.stringify({ action: "subscribe_user" }));
+
+        const cardsChangedEvent = {
+            type: "user:org_board_cards_changed",
+            payload: {
+                orgId: "org-test-1",
+                boardId: "board-101",
+                cardCount: 7
+            }
+        };
+
+        const req = new Request("http://localhost:3001/internal/notify-users", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "x-internal-secret": JWT_SECRET
+            },
+            body: JSON.stringify({
+                userIds: ["user_cards"],
+                event: cardsChangedEvent
+            })
+        });
+
+        const res = await handleUpgradeRequest(req, server as any, JWT_SECRET);
+        expect(res?.status).toBe(200);
+
+        const tab1Msgs = tab1.getSentMessages().map(m => JSON.parse(m));
+        const tab2Msgs = tab2.getSentMessages().map(m => JSON.parse(m));
+
+        expect(tab1Msgs.some(m => m.type === "user:org_board_cards_changed" && m.payload.cardCount === 7)).toBe(true);
+        expect(tab2Msgs.some(m => m.type === "user:org_board_cards_changed" && m.payload.cardCount === 7)).toBe(true);
+    });
+
+    // -------------------------------------------------------------
+    // Scenario 13: user:org_board_updated delivery to multi-tab users
+    // -------------------------------------------------------------
+    it("13. POST /internal/notify-users delivers user:org_board_updated to multiple tabs", async () =>
+    {
+        const server = createMockServer();
+        const tab1 = createMockSocket("user_upd", "upd@test.com", "Upd User");
+        const tab2 = createMockSocket("user_upd", "upd@test.com", "Upd User");
+
+        await handleWebSocketMessage(tab1, server, JSON.stringify({ action: "subscribe_user" }));
+        await handleWebSocketMessage(tab2, server, JSON.stringify({ action: "subscribe_user" }));
+
+        const boardUpdatedEvent = {
+            type: "user:org_board_updated",
+            payload: {
+                orgId: "org-test-1",
+                boardId: "board-101",
+                changes: {
+                    title: "Updated Board Title",
+                    isArchived: true
+                }
+            }
+        };
+
+        const req = new Request("http://localhost:3001/internal/notify-users", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "x-internal-secret": JWT_SECRET
+            },
+            body: JSON.stringify({
+                userIds: ["user_upd"],
+                event: boardUpdatedEvent
+            })
+        });
+
+        const res = await handleUpgradeRequest(req, server as any, JWT_SECRET);
+        expect(res?.status).toBe(200);
+
+        const tab1Msgs = tab1.getSentMessages().map(m => JSON.parse(m));
+        const tab2Msgs = tab2.getSentMessages().map(m => JSON.parse(m));
+
+        expect(tab1Msgs.some(m => m.type === "user:org_board_updated" && m.payload.changes.isArchived === true)).toBe(true);
+        expect(tab2Msgs.some(m => m.type === "user:org_board_updated" && m.payload.changes.isArchived === true)).toBe(true);
+    });
 });

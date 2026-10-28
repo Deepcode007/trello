@@ -25,6 +25,7 @@ export async function deleteSection(req: Request, res: Response)
                 select: {
                     org: {
                         select: {
+                            id: true,
                             members: {
                                 where: {
                                     userId: req.id,
@@ -108,6 +109,36 @@ export async function deleteSection(req: Request, res: Response)
     const actionText = issueCount > 0
         ? `deleted section: ${deletedSection.title} and reassigned ${issueCount} issues`
         : `deleted section: ${deletedSection.title}`;
+
+    const orgId = user.board?.org?.id;
+    let columnCount = await prisma.sections.count({
+        where: { boardId: user.boardId }
+    });
+
+    let memberUserIds: string[] = [];
+    const acceptedMembers = await prisma.membership.findMany({
+        where: { orgId, accepted: true },
+        select: { userId: true }
+    });
+    memberUserIds = acceptedMembers.map((m: any) => m.userId).filter(Boolean);
+
+    if (memberUserIds.length > 0)
+    {
+        try
+        {
+            await wsBroadcaster.notifyUsers(memberUserIds, {
+                type: "user:org_board_columns_changed",
+                payload: {
+                    orgId,
+                    boardId: user.boardId,
+                    columnCount
+                }
+            });
+        } catch (err)
+        {
+            console.warn("[deleteSection] Failed to dispatch column count changed event:", err);
+        }
+    }
 
     return res.status(200).json({
         success: true,

@@ -26,8 +26,10 @@ export async function updateBoard(req: Request, res: Response)
             id: result.data.boardId
         },
         select: {
+            orgId: true,
             org: {
                 select: {
+                    id: true,
                     members: {
                         where: {
                             accepted: true,
@@ -49,6 +51,41 @@ export async function updateBoard(req: Request, res: Response)
         type: "board:updated",
         payload: { boardId: updated.id, title: updated.title, description: updated.description, color: updated.color, isArchived: updated.isArchived }
     }), tx => tx.boards.update({ where: { id: result.data.boardId }, data: result2.data }));
+
+    const orgId = user.orgId;
+    let memberUserIds: string[] = [];
+
+    const acceptedMembers = await prisma.membership.findMany({
+        where: { orgId, accepted: true },
+        select: { userId: true }
+    });
+
+    memberUserIds = acceptedMembers.map((m: any) => m.userId).filter(Boolean);
+
+    if (memberUserIds.length > 0)
+    {
+        try
+        {
+            await wsBroadcaster.notifyUsers(memberUserIds, {
+                type: "user:org_board_updated",
+                payload: {
+                    orgId,
+                    boardId: (board as any).id,
+                    board,
+                    changes: {
+                        title: (board as any).title,
+                        description: (board as any).description,
+                        color: (board as any).color,
+                        isArchived: (board as any).isArchived,
+                        updatedAt: (board as any).updatedAt ? (board as any).updatedAt.toISOString() : undefined
+                    }
+                }
+            });
+        } catch (err)
+        {
+            console.warn("[updateBoard] Failed to dispatch org board updated event:", err);
+        }
+    }
 
     return res.status(200).json({
         success: true,

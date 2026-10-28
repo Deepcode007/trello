@@ -39,5 +39,10 @@ export type {
     UserLeftPayload,
     UserEventType,
     NotificationType,
-    UserNotificationPayload
+    UserNotificationPayload,
+    OrgBoardCreatedPayload,
+    OrgBoardDeletedPayload,
+    OrgBoardColumnsChangedPayload,
+    OrgBoardCardsChangedPayload,
+    OrgBoardUpdatedPayload
 } from "realtime";

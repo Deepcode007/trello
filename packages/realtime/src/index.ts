@@ -311,7 +311,57 @@ export type UserEventType =
     | "user:org_invitation_accepted"
     | "user:org_role_changed"
     | "user:org_member_removed"
-    | "user:org_membership_updated";
+    | "user:org_membership_updated"
+    | "user:org_board_created"
+    | "user:org_board_deleted"
+    | "user:org_board_columns_changed"
+    | "user:org_board_cards_changed"
+    | "user:org_board_updated";
+
+export interface OrgBoardCreatedPayload
+{
+    orgId: string;
+    board: unknown;
+    [key: string]: unknown;
+}
+
+export interface OrgBoardDeletedPayload
+{
+    orgId: string;
+    boardId: string;
+    [key: string]: unknown;
+}
+
+export interface OrgBoardColumnsChangedPayload
+{
+    orgId: string;
+    boardId: string;
+    columnCount: number;
+    [key: string]: unknown;
+}
+
+export interface OrgBoardCardsChangedPayload
+{
+    orgId: string;
+    boardId: string;
+    cardCount: number;
+    [key: string]: unknown;
+}
+
+export interface OrgBoardUpdatedPayload
+{
+    orgId: string;
+    boardId: string;
+    changes?: {
+        title?: string;
+        description?: string | null;
+        color?: string | null;
+        isArchived?: boolean;
+        updatedAt?: string;
+    };
+    board?: unknown;
+    [key: string]: unknown;
+}
 
 export interface UserNotificationPayload
 {

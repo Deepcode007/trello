@@ -28,6 +28,7 @@ export async function createSection(req: Request, res: Response)
             title: true,
             org: {
                 select: {
+                    id: true,
                     members: {
                         where: {
                             role: {
@@ -62,6 +63,36 @@ export async function createSection(req: Request, res: Response)
     }), tx => tx.sections.create({
         data: { title: result2.data.title, boardId: result.data.boardId, position }
     }));
+
+    const orgId = user.org?.id;
+    let columnCount = await prisma.sections.count({
+        where: { boardId: result.data.boardId }
+    });
+
+    let memberUserIds: string[] = [];
+    const acceptedMembers = await prisma.membership.findMany({
+        where: { orgId, accepted: true },
+        select: { userId: true }
+    });
+    memberUserIds = acceptedMembers.map((m: any) => m.userId).filter(Boolean);
+
+    if (memberUserIds.length > 0)
+    {
+        try
+        {
+            await wsBroadcaster.notifyUsers(memberUserIds, {
+                type: "user:org_board_columns_changed",
+                payload: {
+                    orgId,
+                    boardId: result.data.boardId,
+                    columnCount
+                }
+            });
+        } catch (err)
+        {
+            console.warn("[createSection] Failed to dispatch column count changed event:", err);
+        }
+    }
 
     return res.status(201).json({
         success: true,
