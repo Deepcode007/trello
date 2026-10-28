@@ -6,7 +6,7 @@ const TEST_DB_URL = (env.RUN_DB_TESTS === "1" ? env.DATABASE_TEST_URL : env.DATA
 
 async function clearTestDatabase()
 {
-    console.log(`\n🧹 Globally clearing test database: ${TEST_DB_NAME}...`);
+    console.log(`\n🧹 Globally clearing test database: ${TEST_DB_URL}...`);
 
     const pgClient = new Client({ connectionString: TEST_DB_URL });
     await pgClient.connect();
