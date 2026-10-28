@@ -2,7 +2,9 @@ import { useEffect, useRef, useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "../store/useAuthStore";
 import { useBoardStore } from "../store/useBoardStore";
-import { WS_BASE_URL, api } from "../lib/api";
+import { api } from "../lib/api";
+import { useSocketContext } from "../context/SocketContext";
+import { getAppSocketManager } from "./useAppSocket";
 import type { BoardDetail, BoardSection, BoardIssue } from "../lib/board-api";
 import type {
   BroadcastEvent,
@@ -268,8 +270,8 @@ export function processCollaboratorsFromEvent(
 
 export function useBoardSocket(boardId?: string) {
   const queryClient = useQueryClient();
-  const token = useAuthStore(s => s.token);
   const currentUser = useAuthStore(s => s.user);
+  const socketContext = useSocketContext();
 
   const {
     setConnectionStatus,
@@ -281,12 +283,15 @@ export function useBoardSocket(boardId?: string) {
     resetBoardState
   } = useBoardStore();
 
-  const wsRef = useRef<WebSocket | null>(null);
-  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const retryCountRef = useRef(0);
   const lastSeqRef = useRef<string | null>(null);
   const isMountedRef = useRef(true);
+
+  // Synchronize board store connection status with socket context status
+  useEffect(() => {
+    if (socketContext?.connectionStatus) {
+      setConnectionStatus(socketContext.connectionStatus);
+    }
+  }, [socketContext?.connectionStatus, setConnectionStatus]);
 
   const handleBroadcastEvent = useCallback((event: IncomingSocketEvent) => {
     if (!event) return;
@@ -567,119 +572,50 @@ export function useBoardSocket(boardId?: string) {
       }
     } catch (err) {
       console.warn("Failed to catch up missed events, invalidating board cache:", err);
-      queryClient.invalidateQueries({ queryKey: ["board", bId] });
+      queryClient?.invalidateQueries({ queryKey: ["board", bId] });
     }
   }, [queryClient, handleBroadcastEvent]);
-
-  const connect = useCallback(() => {
-    if (!isMountedRef.current || !boardId || !token) return;
-
-    const wsUrl = `${WS_BASE_URL}?token=${encodeURIComponent(token)}`;
-    const ws = new WebSocket(wsUrl);
-    wsRef.current = ws;
-
-    ws.onopen = () => {
-      if (!isMountedRef.current) return;
-      setConnectionStatus("connected");
-      setActiveBoardId(boardId);
-      retryCountRef.current = 0;
-
-      // Join board room
-      ws.send(JSON.stringify({ action: "join", boardId }));
-
-      // If we previously had a sequence, catch up missing events
-      if (lastSeqRef.current) {
-        syncMissedEvents(boardId, lastSeqRef.current);
-      }
-
-      // Heartbeat interval: proactive ping every 25 seconds
-      if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
-      pingIntervalRef.current = setInterval(() => {
-        if (ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({ action: "ping" }));
-        }
-      }, 25000);
-    };
-
-    ws.onmessage = evt => {
-      if (!isMountedRef.current) return;
-      try {
-        const data = typeof evt.data === "string" ? JSON.parse(evt.data) : evt.data;
-        if (data.action === "ping" || data.type === "ping") {
-          ws.send(JSON.stringify({ action: "pong" }));
-          return;
-        }
-        if (data.action === "pong" || data.type === "pong") {
-          return;
-        }
-        handleBroadcastEvent(data);
-      } catch (err) {
-        console.error("Failed to parse websocket message:", err);
-      }
-    };
-
-    ws.onclose = () => {
-      if (!isMountedRef.current) return;
-      setConnectionStatus("disconnected");
-      if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
-
-      // Exponential backoff reconnect: 1s, 2s, 4s, 8s, up to 10s max
-      const delay = Math.min(1000 * 2 ** retryCountRef.current, 10000);
-      retryCountRef.current += 1;
-      setConnectionStatus("reconnecting");
-      reconnectTimeoutRef.current = setTimeout(() => {
-        if (!isMountedRef.current) return;
-        connect();
-      }, delay);
-    };
-
-    ws.onerror = err => {
-      if (!isMountedRef.current) return;
-      console.warn("WebSocket error:", err);
-      setConnectionStatus("disconnected");
-      try {
-        ws.close();
-      } catch {
-        // no-op
-      }
-    };
-  }, [boardId, token, setConnectionStatus, setActiveBoardId, syncMissedEvents, handleBroadcastEvent]);
 
   useEffect(() => {
     isMountedRef.current = true;
     lastSeqRef.current = null;
-    connect();
+
+    if (!boardId) {
+      return;
+    }
+
+    setActiveBoardId(boardId);
+
+    const subscriber = socketContext || getAppSocketManager();
+    const unregister = subscriber.registerBoardSubscriber(boardId, {
+      onEvent: (event: IncomingSocketEvent) => {
+        if (!isMountedRef.current) return;
+        handleBroadcastEvent(event);
+      },
+      onReconnect: () => {
+        if (!isMountedRef.current) return;
+        if (lastSeqRef.current) {
+          syncMissedEvents(boardId, lastSeqRef.current);
+        }
+      }
+    });
+
+    if (lastSeqRef.current) {
+      syncMissedEvents(boardId, lastSeqRef.current);
+    }
 
     return () => {
       isMountedRef.current = false;
-      if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
-      if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
-      if (wsRef.current) {
-        wsRef.current.onclose = null;
-        wsRef.current.onerror = null;
-        wsRef.current.onmessage = null;
-        wsRef.current.onopen = null;
-        if (wsRef.current.readyState === WebSocket.OPEN && boardId) {
-          try {
-            wsRef.current.send(JSON.stringify({ action: "leave", boardId }));
-          } catch {
-            // no-op
-          }
-        }
-        try {
-          wsRef.current.close();
-        } catch {
-          // no-op
-        }
-        wsRef.current = null;
+      if (unregister) {
+        unregister();
       }
       resetBoardState();
     };
-  }, [connect, boardId, resetBoardState]);
+  }, [boardId, socketContext, setActiveBoardId, resetBoardState, handleBroadcastEvent, syncMissedEvents]);
 
   return {
-    isConnected: useBoardStore(s => s.connected),
-    connectionStatus: useBoardStore(s => s.connectionStatus),
+    isConnected: socketContext?.isConnected ?? getAppSocketManager().isConnected() ?? useBoardStore(s => s.connected),
+    connectionStatus: socketContext?.connectionStatus ?? getAppSocketManager().getConnectionStatus() ?? useBoardStore(s => s.connectionStatus),
     collaborators: useBoardStore(s => s.collaborators),
     lastSeenSequence: useBoardStore(s => s.lastSeenSequence),
     handleBroadcastEvent,

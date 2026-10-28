@@ -4,7 +4,8 @@ import {
   getOrgErrorMessage,
   type Organization,
   type UserOrgMembership,
-  type CreateOrgPayload
+  type CreateOrgPayload,
+  type OrgRole
 } from "../lib/org-api";
 
 export const ACTIVE_ORG_STORAGE_KEY = "active_org_id";
@@ -53,6 +54,9 @@ export interface OrgState {
   createOrg: (payload: CreateOrgPayload) => Promise<{ success: boolean; org?: Organization; error?: string }>;
   acceptInvite: (orgId: string) => Promise<{ success: boolean; error?: string }>;
   resetOrgState: () => void;
+  updateMembershipRole: (orgId: string, role: OrgRole) => void;
+  removeMembership: (orgId: string) => void;
+  addOrUpdateMembership: (membership: UserOrgMembership) => void;
 }
 
 // Reference cache for computed getters to guarantee getSnapshot reference stability under React 18/19 useSyncExternalStore
@@ -238,6 +242,43 @@ export const useOrgStore = create<OrgState>((set, get) => ({
       activeOrgId: null,
       isLoading: false,
       error: null
+    });
+  },
+
+  updateMembershipRole: (orgId: string, role: OrgRole) => {
+    clearOrgStoreCache();
+    set(state => ({
+      memberships: state.memberships.map(m =>
+        m.orgId === orgId ? { ...m, role, updatedAt: new Date().toISOString() } : m
+      )
+    }));
+  },
+
+  removeMembership: (orgId: string) => {
+    clearOrgStoreCache();
+    const currentActive = get().activeOrgId;
+    const isRemovedActive = currentActive === orgId;
+    if (isRemovedActive) {
+      try {
+        persistActiveOrgId(null);
+      } catch {
+        // Safe fallback
+      }
+    }
+    set(state => ({
+      memberships: state.memberships.filter(m => m.orgId !== orgId),
+      activeOrgId: isRemovedActive ? null : state.activeOrgId
+    }));
+  },
+
+  addOrUpdateMembership: (membership: UserOrgMembership) => {
+    clearOrgStoreCache();
+    set(state => {
+      const exists = state.memberships.some(m => m.orgId === membership.orgId);
+      const next = exists
+        ? state.memberships.map(m => (m.orgId === membership.orgId ? { ...m, ...membership } : m))
+        : [...state.memberships, membership];
+      return { memberships: next };
     });
   }
 }));

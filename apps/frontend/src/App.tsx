@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useMemo } from "react";
-import { BrowserRouter, Routes, Route, Navigate, Link, useLocation, useSearchParams } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, Link, useLocation, useSearchParams, Outlet } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { SocketProvider } from "./context/SocketContext";
 import {
     Kanban,
     LogOut,
@@ -89,7 +90,7 @@ function PublicOnlyRoute({ children }: { children: React.ReactNode })
     return <>{children}</>;
 }
 
-function AppLayout({ children }: { children: React.ReactNode })
+function AppLayout({ children }: { children?: React.ReactNode })
 {
     const user = useAuthStore(s => s.user);
     const logout = useAuthStore(s => s.logout);
@@ -261,7 +262,7 @@ function AppLayout({ children }: { children: React.ReactNode })
                 )}
             </header>
 
-            <main className="flex-1">{children}</main>
+            <main className="flex-1">{children ?? <Outlet />}</main>
 
             {/* Layout Level Modals */}
             {activeOrgId && (
@@ -494,25 +495,17 @@ export function App()
                         }
                     />
                     <Route
-                        path="/"
                         element={
                             <ProtectedRoute>
-                                <AppLayout>
-                                    <DashboardPage />
-                                </AppLayout>
+                                <SocketProvider>
+                                    <AppLayout />
+                                </SocketProvider>
                             </ProtectedRoute>
                         }
-                    />
-                    <Route
-                        path="/orgs/:orgId/boards/:boardId"
-                        element={
-                            <ProtectedRoute>
-                                <AppLayout>
-                                    <BoardCanvasPage />
-                                </AppLayout>
-                            </ProtectedRoute>
-                        }
-                    />
+                    >
+                        <Route path="/" element={<DashboardPage />} />
+                        <Route path="/orgs/:orgId/boards/:boardId" element={<BoardCanvasPage />} />
+                    </Route>
                     <Route path="*" element={<Navigate to="/" replace />} />
                 </Routes>
             </BrowserRouter>
