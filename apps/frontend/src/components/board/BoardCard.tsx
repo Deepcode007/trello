@@ -1,6 +1,6 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
-import { Kanban, Archive } from "lucide-react";
+import { Kanban, Archive, Columns } from "lucide-react";
 import { Badge } from "../ui/badge";
 import type { BoardSummary } from "../../lib/board-api";
 
@@ -12,7 +12,8 @@ interface BoardCardProps {
 export function BoardCard({ board, orgId }: BoardCardProps) {
   const navigate = useNavigate();
   const accentColor = board.color || "#3b82f6";
-  const issueCount = board._count?.issues ?? 0;
+  const issueCount = board.cardCount ?? board._count?.issues ?? 0;
+  const columnCount = board.columnCount ?? board._count?.section ?? 0;
 
   const handleClick = () => {
     navigate(`/orgs/${orgId}/boards/${board.id}`);
@@ -65,10 +66,16 @@ export function BoardCard({ board, orgId }: BoardCardProps) {
         )}
 
         <div className="mt-4 pt-3 border-t border-border/60 flex items-center justify-between text-xs text-muted-foreground">
-          <span className="flex items-center gap-1.5 font-medium">
-            <Kanban className="h-3.5 w-3.5 text-muted-foreground/80" />
-            <span>{issueCount} {issueCount === 1 ? "card" : "cards"}</span>
-          </span>
+          <div className="flex items-center gap-3">
+            <span className="flex items-center gap-1.5 font-medium" data-testid={`board-card-cards-${board.id}`}>
+              <Kanban className="h-3.5 w-3.5 text-muted-foreground/80" />
+              <span>{issueCount} {issueCount === 1 ? "card" : "cards"}</span>
+            </span>
+            <span className="flex items-center gap-1.5 font-medium" data-testid={`board-card-columns-${board.id}`}>
+              <Columns className="h-3.5 w-3.5 text-muted-foreground/80" />
+              <span data-testid={`column-count-${board.id}`}>{columnCount} {columnCount === 1 ? "column" : "columns"}</span>
+            </span>
+          </div>
           <span className="text-xs font-semibold text-primary opacity-0 group-hover:opacity-100 transition-opacity">
             Open Board &rarr;
           </span>

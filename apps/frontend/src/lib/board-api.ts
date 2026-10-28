@@ -11,7 +11,10 @@ export interface BoardSummary {
   updatedAt?: string;
   _count?: {
     issues: number;
+    section?: number;
   };
+  columnCount?: number;
+  cardCount?: number;
 }
 
 export interface BoardIssue {

@@ -27,9 +27,11 @@ export async function getAllBoards(req: Request, res: Response)
                     description: true,
                     color: true,
                     isArchived: true,
+                    orgId: true,
                     _count: {
                         select: {
-                            issues: true
+                            issues: true,
+                            section: true
                         }
                     }
                 }
@@ -54,6 +56,10 @@ export async function getAllBoards(req: Request, res: Response)
 
     return res.status(200).json({
         success: true,
-        data: org.boards
+        data: org.boards.map(b => ({
+            ...b,
+            columnCount: (b as any)._count?.section ?? 0,
+            cardCount: (b as any)._count?.issues ?? 0
+        }))
     })
 }
