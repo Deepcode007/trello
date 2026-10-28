@@ -921,4 +921,139 @@ describe("Live WebSocket Client-Server Integration Tests (Unmocked)", () => {
             expect(evictMsg.reason).toBe("Member removed from organization");
         });
     });
+
+    describe("6. User Topic Real-Time Delivery via HTTP /internal/notify-users", () => {
+        liveIt("subscribes to user topic and receives realtime notification from /internal/notify-users", async () => {
+            const client = await createLiveClient(authorizedToken);
+            client.sendJson({ action: "subscribe_user" });
+            const ack = await client.waitForMessage(m => m.type === "user_subscribed");
+            expect(ack.type).toBe("user_subscribed");
+            expect(ack.userId).toBe(authorizedUserId);
+
+            // POST to /internal/notify-users
+            const response = await fetch(`${httpBaseUrl}/internal/notify-users`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "x-internal-secret": JWT_SECRET
+                },
+                body: JSON.stringify({
+                    userIds: [authorizedUserId],
+                    event: {
+                        type: "user:notification",
+                        payload: {
+                            notification: {
+                                id: "live-notif-1",
+                                type: "org:invitation_received",
+                                data: { orgId: testOrgId },
+                                createdAt: new Date().toISOString()
+                            }
+                        }
+                    }
+                })
+            });
+
+            expect(response.status).toBe(200);
+            const json = await response.json() as { success?: boolean };
+            expect(json.success).toBe(true);
+
+            // Client should receive user:notification event
+            const notifMsg = await client.waitForMessage(m => m.type === "user:notification");
+            expect(notifMsg.type).toBe("user:notification");
+            expect(notifMsg.payload.notification.id).toBe("live-notif-1");
+        });
+
+        liveIt("delivers notification to multiple live clients for the same user (multi-tab)", async () => {
+            const client1 = await createLiveClient(authorizedToken);
+            const client2 = await createLiveClient(authorizedToken);
+
+            client1.sendJson({ action: "subscribe_user" });
+            client2.sendJson({ action: "subscribe_user" });
+
+            await Promise.all([
+                client1.waitForMessage(m => m.type === "user_subscribed"),
+                client2.waitForMessage(m => m.type === "user_subscribed")
+            ]);
+
+            const response = await fetch(`${httpBaseUrl}/internal/notify-users`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "x-internal-secret": JWT_SECRET
+                },
+                body: JSON.stringify({
+                    userIds: [authorizedUserId],
+                    event: {
+                        type: "user:notification",
+                        payload: {
+                            notification: {
+                                id: "live-multi-tab-notif",
+                                type: "org:role_changed",
+                                data: { orgId: testOrgId },
+                                createdAt: new Date().toISOString()
+                            }
+                        }
+                    }
+                })
+            });
+
+            expect(response.status).toBe(200);
+
+            const [msg1, msg2] = await Promise.all([
+                client1.waitForMessage(m => m.type === "user:notification"),
+                client2.waitForMessage(m => m.type === "user:notification")
+            ]);
+
+            expect(msg1.payload.notification.id).toBe("live-multi-tab-notif");
+            expect(msg2.payload.notification.id).toBe("live-multi-tab-notif");
+        });
+
+        liveIt("does not deliver notification to other users' live sockets", async () => {
+            const clientA = await createLiveClient(authorizedToken);
+            const clientB = await createLiveClient(secondMemberToken);
+
+            clientA.sendJson({ action: "subscribe_user" });
+            clientB.sendJson({ action: "subscribe_user" });
+
+            await Promise.all([
+                clientA.waitForMessage(m => m.type === "user_subscribed"),
+                clientB.waitForMessage(m => m.type === "user_subscribed")
+            ]);
+
+            let clientBReceived = false;
+            clientB.waitForMessage(m => m.type === "user:notification", 200).then(() => {
+                clientBReceived = true;
+            }).catch(() => {});
+
+            const response = await fetch(`${httpBaseUrl}/internal/notify-users`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "x-internal-secret": JWT_SECRET
+                },
+                body: JSON.stringify({
+                    userIds: [authorizedUserId],
+                    event: {
+                        type: "user:notification",
+                        payload: {
+                            notification: {
+                                id: "isolated-notif-for-alice",
+                                type: "card:assigned",
+                                data: { cardId: "c1" },
+                                createdAt: new Date().toISOString()
+                            }
+                        }
+                    }
+                })
+            });
+
+            expect(response.status).toBe(200);
+
+            const msgA = await clientA.waitForMessage(m => m.type === "user:notification");
+            expect(msgA.payload.notification.id).toBe("isolated-notif-for-alice");
+
+            await new Promise(r => setTimeout(r, 250));
+            expect(clientBReceived).toBe(false);
+        });
+    });
 });
