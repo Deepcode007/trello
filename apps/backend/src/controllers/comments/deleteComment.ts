@@ -1,6 +1,6 @@
-import { prisma } from "db/prisma"
-import type { Request, Response } from "express"
-import zod from "zod"
+import { prisma } from "db/prisma";
+import type { Request, Response } from "express";
+import zod from "zod";
 import { Forbidden, Not_Found, ValidationError } from "../../helpers/errorClass";
 import { wsBroadcaster } from "../../services/broadcaster";
 
@@ -50,7 +50,7 @@ export async function deleteComment(req: Request, res: Response)
                 }
             }
         }
-    })
+    });
 
     if (!comment || comment.deletedAt) throw new Not_Found("Comment not found");
     if (comment.issue.board.org.members.length === 0) throw new Forbidden("Members Only");
@@ -75,6 +75,7 @@ export async function deleteComment(req: Request, res: Response)
         });
         if (update.count === 0) throw new Not_Found("Comment not found");
 
+        // Reparent children to the deleted comment's parent
         await tx.comments.updateMany({
             where: {
                 parentId: comment.id
@@ -84,6 +85,35 @@ export async function deleteComment(req: Request, res: Response)
             }
         });
 
+        // Invalidate/prune active unread mention notifications pointing to this deleted comment
+        if (tx.notifications && typeof tx.notifications.findMany === "function" && typeof tx.notifications.deleteMany === "function")
+        {
+            try
+            {
+                const unreadNotifs = await tx.notifications.findMany({
+                    where: {
+                        type: "mention:comment",
+                        read: false
+                    }
+                });
+
+                const matchingIds = unreadNotifs
+                    .filter((n: any) => n.data && (n.data as any).commentId === comment.id)
+                    .map((n: any) => n.id);
+
+                if (matchingIds.length > 0)
+                {
+                    await tx.notifications.deleteMany({
+                        where: { id: { in: matchingIds } }
+                    });
+                }
+            }
+            catch (err)
+            {
+                console.warn("[deleteComment] Failed to prune unread mention notifications:", err);
+            }
+        }
+
         const updated = await tx.comments.findUnique({ where: { id: comment.id } });
         if (!updated) throw new Not_Found("Comment not found");
         return updated;
@@ -92,5 +122,5 @@ export async function deleteComment(req: Request, res: Response)
     return res.status(200).json({
         success: true,
         data: deleted.id
-    })
+    });
 }
