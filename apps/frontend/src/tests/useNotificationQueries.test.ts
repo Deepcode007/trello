@@ -8,14 +8,14 @@ import {
   useMarkAsRead,
   useMarkAllAsRead,
   NOTIFICATION_QUERY_KEYS
-} from "../useNotificationQueries";
+} from "../hooks/useNotificationQueries";
 import {
   notificationApi,
   type NotificationResponse,
   type NotificationsPageResponse
-} from "../../lib/notification-api";
-import { applyNotificationReceived } from "../useAppSocket";
-import { useAuthStore } from "../../store/useAuthStore";
+} from "../lib/notification-api";
+import { applyNotificationReceived } from "../hooks/useAppSocket";
+import { useAuthStore } from "../store/useAuthStore";
 
 describe("TanStack Query Notification Hooks Suite", () => {
   let queryClient: QueryClient;
