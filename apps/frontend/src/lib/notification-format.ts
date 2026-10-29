@@ -114,6 +114,15 @@ export function getNotificationNavigationTarget(
 
   // If both orgId and boardId are present, navigate to board canvas
   if (typeof data.orgId === "string" && data.orgId.trim() && typeof data.boardId === "string" && data.boardId.trim()) {
+    const cardId = typeof data.cardId === "string" && data.cardId.trim()
+      ? data.cardId.trim()
+      : typeof data.issueId === "string" && data.issueId.trim()
+        ? data.issueId.trim()
+        : null;
+
+    if (cardId) {
+      return `/orgs/${data.orgId}/boards/${data.boardId}?card=${encodeURIComponent(cardId)}`;
+    }
     return `/orgs/${data.orgId}/boards/${data.boardId}`;
   }
 

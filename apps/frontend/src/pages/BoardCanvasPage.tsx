@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import {
   AlertTriangle,
   ShieldAlert,
@@ -19,9 +19,17 @@ import { getBoardErrorMessage } from "../lib/board-api";
 export function BoardCanvasPage() {
   const { orgId, boardId } = useParams<{ orgId: string; boardId: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const cardQueryParam = searchParams.get("card") || searchParams.get("issueId");
   const activeOrgId = useOrgStore(s => s.activeOrgId);
   const setActiveOrgId = useOrgStore(s => s.setActiveOrgId);
-  const [selectedIssueId, setSelectedIssueId] = useState<string | null>(null);
+  const [selectedIssueId, setSelectedIssueId] = useState<string | null>(cardQueryParam);
+
+  useEffect(() => {
+    if (cardQueryParam && cardQueryParam !== selectedIssueId) {
+      setSelectedIssueId(cardQueryParam);
+    }
+  }, [cardQueryParam]);
 
   // Sync active organization in store if navigating directly to a board route
   useEffect(() => {
