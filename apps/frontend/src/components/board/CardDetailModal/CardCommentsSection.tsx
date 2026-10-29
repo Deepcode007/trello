@@ -1,7 +1,6 @@
 import React, { useState } from "react";
 import { MessageSquare, CornerDownRight, Edit2, Trash2, Loader2 } from "lucide-react";
 import { Button } from "../../ui/button";
-import { Textarea } from "../../ui/textarea";
 import { Avatar } from "../../ui/avatar";
 import { useAuthStore } from "../../../store/useAuthStore";
 import { useRole } from "../../../hooks/useRole";
@@ -12,6 +11,8 @@ import {
   useDeleteCommentMutation
 } from "../../../hooks/useKanbanQueries";
 import { getKanbanErrorMessage, type CommentNode } from "../../../lib/kanban-api";
+import { MentionInput } from "./MentionInput";
+import { MentionDisplay } from "./MentionDisplay";
 
 export interface CardCommentsSectionProps {
   issueId: string;
@@ -36,6 +37,7 @@ export function formatCommentDate(isoString: string): string {
 interface SingleCommentItemProps {
   comment: CommentNode;
   issueId: string;
+  orgId?: string;
   currentUserId?: string | null;
   currentUsername?: string | null;
   isAdmin: boolean;
@@ -47,6 +49,7 @@ interface SingleCommentItemProps {
 function SingleCommentItem({
   comment,
   issueId,
+  orgId,
   currentUserId,
   currentUsername,
   isAdmin,
@@ -118,10 +121,11 @@ function SingleCommentItem({
 
           {isEditing ? (
             <form onSubmit={handleEdit} className="space-y-2 pt-1">
-              <Textarea
+              <MentionInput
                 data-testid={`edit-comment-input-${comment.id}`}
                 value={editText}
-                onChange={e => setEditText(e.target.value)}
+                onChange={setEditText}
+                orgId={orgId}
                 disabled={isSubmitting}
                 className="text-xs min-h-[60px]"
               />
@@ -150,9 +154,10 @@ function SingleCommentItem({
               </div>
             </form>
           ) : (
-            <div className="text-foreground leading-relaxed whitespace-pre-wrap">
-              {comment.description}
-            </div>
+            <MentionDisplay
+              content={comment.description}
+              className="text-foreground leading-relaxed whitespace-pre-wrap"
+            />
           )}
 
           {/* Action links */}
@@ -198,11 +203,12 @@ function SingleCommentItem({
           {/* Inline Reply Form */}
           {isReplying && (
             <form onSubmit={handleReply} className="space-y-2 pt-2">
-              <Textarea
+              <MentionInput
                 data-testid={`reply-input-${comment.id}`}
                 placeholder="Write a reply..."
                 value={replyText}
-                onChange={e => setReplyText(e.target.value)}
+                onChange={setReplyText}
+                orgId={orgId}
                 disabled={isSubmitting}
                 className="text-xs min-h-[50px]"
                 autoFocus
@@ -243,6 +249,7 @@ function SingleCommentItem({
               key={child.id}
               comment={child}
               issueId={issueId}
+              orgId={orgId}
               currentUserId={currentUserId}
               currentUsername={currentUsername}
               isAdmin={isAdmin}
@@ -329,11 +336,12 @@ export function CardCommentsSection({ issueId, orgId }: CardCommentsSectionProps
 
       {/* Root Comment Form */}
       <form onSubmit={handlePostRootComment} className="space-y-2">
-        <Textarea
+        <MentionInput
           data-testid="new-comment-input"
           placeholder="Write a comment..."
           value={newCommentText}
-          onChange={e => setNewCommentText(e.target.value)}
+          onChange={setNewCommentText}
+          orgId={orgId}
           disabled={createCommentMutation.isPending}
           className="text-xs min-h-[70px]"
         />
@@ -362,6 +370,7 @@ export function CardCommentsSection({ issueId, orgId }: CardCommentsSectionProps
               key={comment.id}
               comment={comment}
               issueId={issueId}
+              orgId={orgId}
               currentUserId={currentUser?.id}
               currentUsername={currentUser?.username}
               isAdmin={isAdmin}

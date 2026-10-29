@@ -40,6 +40,13 @@ export interface OrgMemberItem {
   };
 }
 
+export interface SearchMemberResult {
+  id: string;
+  name: string | null;
+  username: string;
+  avatarUrl?: string | null;
+}
+
 export interface CreateOrgPayload {
   name: string;
   description: string;
@@ -167,5 +174,17 @@ export const orgApi = {
       data: { email }
     });
     return res.data.data;
+  },
+
+  /**
+   * GET /api/orgs/:orgId/members/search
+   * Search organization members for mention autocomplete.
+   */
+  searchMembers: async (orgId: string, query = "", limit = 10): Promise<SearchMemberResult[]> => {
+    const res = await api.get<{ success: boolean; data: SearchMemberResult[]; members?: SearchMemberResult[] }>(
+      `/api/orgs/${orgId}/members/search`,
+      { params: { q: query, limit } }
+    );
+    return res.data.data || res.data.members || [];
   }
 };
