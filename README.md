@@ -18,11 +18,11 @@ Designed for agile teams and organizations, this platform provides hierarchical 
 | **Frontend Drag & Drop**      | [@dnd-kit](https://dndkit.com/) (`core` + `sortable`)                                                                           |
 | **Frontend UI & Styling**     | [Tailwind CSS](https://tailwindcss.com/), [Radix UI Primitives](https://www.radix-ui.com/), [Lucide React](https://lucide.dev/) |
 | **Backend Framework**         | [Express 5](https://expressjs.com/) on Bun runtime                                                                              |
-| **Real-Time Engine**          | Native [Bun WebSockets](https://bun.com/docs/api/websockets) (Pub/Sub topics, room subscriptions, presence)                     |
+| **Real-Time Engine**          | Native [Bun WebSockets](https://bun.com/docs/api/websockets) (Multiplexed board & user topics, presence, app socket manager)   |
 | **Database & ORM**            | [PostgreSQL](https://www.postgresql.org/) with [Prisma ORM](https://www.prisma.io/) (`@prisma/adapter-pg`)                      |
 | **Authentication & Security** | JWT (`jsonwebtoken`), `bcrypt` password hashing, Role-Based Access Control (RBAC)                                               |
 | **Validation**                | [Zod](https://zod.dev/) schema validation for requests and environment configurations                                           |
-| **Testing**                   | Bun Test runner (`bun:test`), Supertest, custom integration, component & unit test suites (799 tests)                           |
+| **Testing**                   | Bun Test runner (`bun:test`), Supertest, custom component, unit & live DB test suites (1,049 fast tests in ~2.1s, 1,288+ full suite tests) |
 
 ---
 
@@ -31,8 +31,26 @@ Designed for agile teams and organizations, this platform provides hierarchical 
 ### 🏢 Organization & Multi-Tenancy
 
 - **Organization Workspaces**: Create, edit, and manage multiple team workspaces with custom visibility settings.
-- **Role-Based Access Control (RBAC)**: Support for `admin`, `employee`, and `contributor` roles.
-- **Invitation Lifecycle & Cancellation**: Seamless member invitations, role updates, acceptance flows, and ability for admins to revoke or cancel pending invitations (`DELETE /api/orgs/:orgId/members`).
+- **Role-Based Access Control (RBAC)**: Support for `admin`, `employee`, and `contributor` roles with strict route and UI enforcement.
+- **Invitation Lifecycle & Concurrency**: Invite members with optional `role` parameter (`admin`, `employee`, `contributor`, defaults to `contributor`). Concurrency-safe mutations using PostgreSQL advisory locks (`pg_advisory_xact_lock(hashtext(orgId))`) without board outbox overhead. Ability for admins to revoke or cancel pending invitations (`DELETE /api/orgs/:orgId/members`).
+- **Member Search Autocomplete**: Search accepted organization members (`GET /api/orgs/:orgId/members/search?q=...`) for mention and assignment autocompletion.
+
+### 🔔 User-Targeted Notifications & Real-Time Alerts
+
+- **Dedicated Notification Persistence**: Stored in a separate `notifications` table (with `read` boolean state and composite indexes) isolated from board outbox events.
+- **Rich Notification Types**: Automatic alerts for `org:invitation_received`, `org:invitation_accepted`, `org:role_changed`, `org:member_removed`, `mention:comment`, `comment:reply`, and `card:assigned`.
+- **Real-Time User Delivery**: Notifications are dispatched over user-specific WebSocket topics (`user_<userId>`) via `/internal/notify-users`.
+- **Notification REST API**: Cursor-paginated notification feed (`GET /api/notifications`), unread count (`GET /api/notifications/unread-count`), single mark-as-read (`PATCH /:notificationId/read`), and mark-all-read (`PATCH /read-all`).
+- **Interactive Notification UI**: `NotificationBell` with live unread counter badge, `NotificationDropdown`, infinite-scroll `NotificationList`, `NotificationItem`, click-to-navigate card routing, and real-time desktop toast alerts.
+
+### 💬 Threaded Discussions & Mentions
+
+- **Hierarchical Comment Tree**: Infinite-depth nested replies powered by an optimized recursive tree algorithm (`commentTree`).
+- **Rich `@` Mention Autocomplete**: `MentionInput` component triggers search dropdown on typing `@`, inserting canonical markup `@[Display Name](user:userId)`.
+- **Server-Side Mention Validation**: `validateMentions` verifies mentioned users exist, belong to the organization, and have accepted memberships (filters self-mentions and pending members, capped at 20 per comment).
+- **Mention Diffing & Pruning**: Editing comments diffs mentions (creates notifications for newly added mentions, removes stale unread notifications for removed mentions). Deleting comments prunes unread mention notifications atomically.
+- **Safe Mention Rendering**: `MentionDisplay` component parses canonical markup into styled React tags safely without `dangerouslySetInnerHTML`.
+- **Audit & Editing Policies**: 24-hour edit/delete window enforcement for authors; admins can delete comments at any time. Soft-deletion re-parents child replies to maintain thread integrity.
 
 ### 📊 Kanban Boards & Workflows
 
@@ -52,36 +70,32 @@ Designed for agile teams and organizations, this platform provides hierarchical 
 ### 🖥️ Modern React 19 Frontend SPA (`apps/frontend`)
 
 - **Interactive Kanban Canvas**: Fluid drag-and-drop powered by `@dnd-kit` with midpoint position calculations (`dnd-math.ts`) for cards and columns, elevated drag overlays, droppable empty column placeholders, and optimistic updates with automatic rollback on mutation failure.
-- **Real-Time WebSocket State Synchronization**: `useBoardSocket` hooks subscribe to board rooms, live presence stacks display collaborator avatars, and a synchronous in-memory event reducer updates TanStack Query caches instantly for moves, edits, labels, checklists, and comments. Sequence-based catch-up (`/events?sinceSeq=...`) guarantees seamless recovery after disconnects.
+- **Single Multiplexed App WebSocket**: Centralized `AppSocketManager` singleton exposed via `SocketProvider` / `SocketContext`. Maintains a single long-lived WebSocket connection that multiplexes personal notifications (`user_<userId>` via `subscribe_user`) and board rooms (`board_<boardId>` via `join`), providing reconnect resilience with automatic resubscription.
+- **Real-Time Board Synchronization**: `useBoardSocket` registers with the shared app socket, collaborator presence displays active avatars, and synchronous in-memory event reducers update TanStack Query caches instantly for moves, edits, labels, checklists, and comments with zero full-page refetches.
 - **Multi-Criteria Board Search & Filtering**: Fast client-side filtering across text query (title/description), priority level, assignee (`all`, `me`, `unassigned`, or specific user), labels, and due date urgency. Displays active filter metrics and matching/total card ratios while keeping column WIP limit warnings calculated against total column cards so active filters never mask WIP limit violations.
 - **Timezone-Safe Due Date Urgency System**: Custom parser (`parseDateParts`) handles calendar-only dates and midnight UTC ISO strings without premature overdue alerts on the due date or negative-timezone day shifts. Dynamically renders urgency badges (`overdue`, `due-today`, `due-soon`, `upcoming`, and `normal`).
 - **Theme & Dark Mode Engine**: Persistent theme store (`light`, `dark`, `system`) with multi-tab storage synchronization, system preference change listeners, and an inline `<head>` script in `index.html` preventing flash of unstyled content (FOUC).
 - **Responsive Mobile Layout**: Mobile navigation hamburger drawer, collapsible mobile board filter drawer, responsive column widths (`w-[82vw] sm:w-72`), and smooth horizontal touch-scrolling canvas.
-- **Safety & Modal Guardrails**: Guarded column deletion requiring issue reassignment when cards exist, destination column selection stability against background query refetches, and rich card detail modal (checklists with completion ratios, label picker, and threaded discussion tree).
+- **Safety & Modal Guardrails**: Guarded column deletion requiring issue reassignment when cards exist, destination column selection stability against background query refetches, and rich card detail modal (checklists with completion ratios, label picker, mention-enabled threaded discussions).
 
 ### ⚡ Real-Time Collaboration & Presence (WebSockets)
 
-- **Native Pub/Sub Engine**: Board-scoped rooms (`board_<boardId>`) using Bun's native high-performance WebSocket publish/subscribe.
+- **Native Multiplexed Pub/Sub Engine**: Native Bun WebSocket server (`Bun.serve`) managing topic subscriptions for both board rooms (`board_<boardId>`) and personal user topics (`user_<userId>`) over a single client connection.
 - **Ordered Event Sourcing & Advisory Locks**: Outbox event recording (`board_events`) using PostgreSQL transaction-level advisory locks (`pg_advisory_xact_lock`) ensuring strictly sequential, non-colliding event numbering across concurrent workers.
 - **Transactional Outbox & Worker Leases**: Atomic DB mutations and event writes via `executeWithOutbox`. Resilient background outbox worker (`claimedBy`, `claimExpiresAt` leases) ensures safe, at-least-once event delivery across multiple backend instances without duplicate dispatch.
-- **Catch-up Sync API**: Clients can query `/api/boards/:boardId/events?sinceSeq=<sequence>` to sync missing events after reconnecting.
+- **Catch-up Sync API**: Clients query `/api/boards/:boardId/events?sinceSeq=<sequence>` to sync missing events after reconnecting.
 - **Server-Side Heartbeat & Zombie Pruning**: Recurring ping/pong health checks (default 30s) automatically detect inactive sockets, respond to client heartbeat pings/pongs, and terminate dead zombie connections with presence broadcast updates.
 - **Live Event Broadcasting**: Instant updates for card moves, creation, edits, deletions, checklist changes, labels, and column changes.
 - **Presence Tracking & Targeted Eviction**: Real-time `user:joined` and `user:left` events with automatic connection-drop cleanup and administrative user/session eviction hooks (`/internal/evict-user`).
-- **In-Memory Membership Registry & Fast-Path Eviction**: WebSocket server maintains an in-memory membership cache for zero-latency join verification and fast-path multi-board/org socket eviction without repeated database lookups.
+- **In-Memory Membership Registry & Fast-Path Eviction**: WebSocket server maintains an in-memory membership cache (`userOrgMembership`, `boardOrgMap`, `userOrgRole`, `userBoardRole`) for zero-latency join verification and fast-path multi-board/org socket eviction without repeated database lookups.
+- **Internal HTTP IPC Interface**: Backend communicates with WebSockets over authenticated HTTP bridge: `/internal/broadcast`, `/internal/evict-user`, `/internal/notify-users`, and `/internal/update-role`.
 - **Flexible Authentication**: Handshake-level JWT validation supporting headers, cookies, URL query parameters, and subprotocols.
 - **Timing-Attack Resilient Auth**: Login handler utilizes constant-time dummy bcrypt hashing to prevent user enumeration and timing attacks.
-- **Separate Backend and WebSocket Services**: Backend delivers events through the authenticated HTTP bridge (`/internal/broadcast`); the shared `realtime` package holds the event contracts used by both apps.
-
-### 💬 Threaded Discussions & Comments
-
-- **Hierarchical Comment Tree**: Infinite-depth nested replies powered by an optimized recursive tree algorithm (`commentTree`).
-- **Audit & Editing Policies**: 24-hour edit window enforcement and soft-deletion support with standard HTTP 200 responses.
 
 ### 🗄️ Database Optimization
 
-- **Composite Indexing**: Optimized indexes on `[boardId, sectionId]`, `[userId, orgId]`, `[boardId, sequence]`, and foreign key cascades.
-- **Prisma Client Generation**: Tailored output with PostgreSQL native pooling adapter.
+- **Composite Indexing**: Optimized indexes on `[boardId, sectionId]`, `[userId, orgId]`, `[boardId, sequence]`, `[recipientId, read, createdAt(sort: Desc)]`, `[commentId, userId]`, and foreign key cascades.
+- **Prisma Client Generation**: Localized client generation with `@prisma/adapter-pg` driver adapter for native pooling performance.
 
 ---
 
@@ -92,42 +106,42 @@ trello/
 ├── apps/
 │   ├── backend/               # Express 5 REST API server running on Bun
 │   │   ├── src/
-│   │   │   ├── controllers/   # Auth, Org, Board, Section, Issue, & Comment handlers
-│   │   │   ├── helpers/       # Comment tree builder, async wrappers, custom error classes, JWT helpers
+│   │   │   ├── controllers/   # Auth, Org, Board, Section, Issue, Comment, & Notification handlers
+│   │   │   ├── helpers/       # Comment tree builder, mentions parser/validator, async wrappers, error classes
 │   │   │   ├── middlewares/   # JWT authentication & token generation
 │   │   │   ├── models/        # Zod schemas for input validation
-│   │   │   ├── routes/        # Express route definitions (with card & section aliases)
-│   │   │   ├── services/      # WebSocketBroadcaster & Transactional Outbox Worker
+│   │   │   ├── routes/        # Express route definitions (cards, sections, notifications, orgs)
+│   │   │   ├── services/      # wsBroadcaster, Outbox Worker, & NotificationService
 │   │   │   └── types/         # TypeScript environment and entity typings
-│   │   └── tests/             # Integration & unit test suites (180 unit tests)
+│   │   └── tests/             # Unit (268 tests across 14 files) & live database integration test suites (507 total backend tests across 25 files)
 │   │
-│   ├── websockets/            # Native Bun WebSocket collaborative server
+│   ├── websockets/            # Native Bun WebSocket collaborative server (Port 3001)
 │   │   ├── src/
 │   │   │   ├── auth/          # Handshake authentication & token extraction strategies
-│   │   │   ├── server/        # Bun.serve WebSocket server, upgrade handlers, heartbeat & close hooks
-│   │   │   ├── services/      # Broadcaster singleton, in-memory membership cache, & IPC handler
+│   │   │   ├── server.ts      # Bun.serve WebSocket server, upgrade handler, IPC endpoints, heartbeat
+│   │   │   ├── services/      # wsBroadcaster singleton & in-memory membership/role cache
 │   │   │   └── types/         # Client actions, server events, & payload interfaces
-│   │   ├── tests/             # WebSocket test suites (131 tests across auth, pub/sub, heartbeat, upgrade)
-│   │   └── index.ts           # WebSocket entrypoint & HTTP broadcast listener
+│   │   └── tests/             # WebSocket test suites (166 tests: 164 passing, 2 skipped across 9 files)
 │   │
 │   └── frontend/              # High-performance React 19 + Vite Kanban SPA
 │       ├── src/
-│       │   ├── components/    # Board canvas, columns, cards, filter bar, modals, UI primitives
-│       │   ├── hooks/         # useBoardSocket, useRole, useToast, API mutation hooks
-│       │   ├── lib/           # board-filters, date-urgency, dnd-math, kanban-api, org-api
-│       │   ├── pages/         # BoardCanvasPage, BoardsPage, LoginPage, SignupPage
-│       │   ├── store/         # useAuthStore, useOrgStore, useThemeStore (Zustand)
-│       │   └── tests/         # Unit, component, optimistic rollback, & adversarial suites (515 tests)
+│       │   ├── components/    # Board canvas, columns, cards, filter bar, modals, notifications, mentions
+│       │   ├── context/       # SocketContext & SocketProvider (app-level shared socket manager)
+│       │   ├── hooks/         # useAppSocket, useBoardSocket, useNotificationQueries, useRole, query hooks
+│       │   ├── lib/           # board-filters, date-urgency, dnd-math, kanban-api, org-api, notification-api
+│       │   ├── pages/         # BoardCanvasPage, LoginPage, SignupPage
+│       │   ├── store/         # useAuthStore, useBoardStore, useOrgStore, useThemeStore (Zustand)
+│       │   └── tests/         # Unit, component, optimistic rollback, notifications, mentions (617 tests across 45 files)
 │       └── index.html         # SPA entrypoint with FOUC prevention script
 │
 ├── packages/
 │   ├── db/                    # Prisma schema, migrations, and PostgreSQL client
-│   │   ├── prisma/            # schema.prisma, migration logs, and outbox event leases
-│   │   ├── scripts/           # Database utilities (clearDB.ts)
-│   │   └── db.ts              # Prisma client instance with PostgreSQL adapter
+│   │   ├── prisma/            # schema.prisma (15 models including notifications & mentions)
+│   │   ├── scripts/           # Database utilities (clearDB.ts with atomic TRUNCATE CASCADE)
+│   │   └── db.ts              # Prisma client instance with @prisma/adapter-pg
 │   ├── realtime/              # Shared real-time event definitions, types, and topic helpers
 │   │   ├── src/
-│   │   │   └── index.ts       # BroadcastEvent, payloads, formatBoardTopic, cleanBoardId
+│   │   │   └── index.ts       # BroadcastEvent, payloads, formatBoardTopic, formatUserTopic, topic helpers
 │   │   └── package.json
 │   ├── ui/                    # Shared React component library
 │   ├── eslint-config/         # Monorepo-wide ESLint configurations
@@ -147,6 +161,8 @@ erDiagram
     user ||--o{ membership : "has"
     user ||--o{ issue_mapping : "assigned to"
     user ||--o{ comments : "writes"
+    user ||--o{ notifications : "receives"
+    user ||--o{ mentions : "mentioned in"
 
     orgs ||--o{ membership : "contains"
     orgs ||--o{ boards : "owns"
@@ -167,6 +183,7 @@ erDiagram
     checklists ||--o{ checklist_items : "contains"
 
     comments ||--o{ comments : "replies to"
+    comments ||--o{ mentions : "contains"
 
     user {
         string id PK
@@ -279,6 +296,22 @@ erDiagram
         datetime claimExpiresAt
         datetime createdAt
     }
+
+    notifications {
+        string id PK
+        string recipientId FK
+        string type
+        json data
+        boolean read
+        datetime createdAt
+    }
+
+    mentions {
+        string id PK
+        string commentId FK
+        string userId FK
+        datetime createdAt
+    }
 ```
 
 ---
@@ -322,14 +355,20 @@ Send JSON frames over the WebSocket connection:
 {
   "action": "pong" // or "heartbeat_ack"
 }
+
+// 4. Subscribe to Personal User Topic (for notifications)
+{
+  "action": "subscribe_user",
+  "userId": "user-uuid"
+}
 ```
 
 > [!NOTE]
-> The WebSocket server automatically runs server-side heartbeat intervals (default 30s) sending native ping frames and checking socket activity. Sockets that fail to respond before the subsequent heartbeat check are automatically terminated as zombie connections and broadcast `user:left` presence updates.
+> The client connects using a single shared `AppSocketManager` connection at the application root. Upon connection, it sends `subscribe_user` to listen for personal notifications on `user_<userId>`, and dynamically multiplexes board rooms (`board_<boardId>`) using `join` and `leave` without reconnecting. The WebSocket server automatically runs server-side heartbeat intervals (default 30s); inactive zombie connections are pruned and trigger `user:left` presence updates.
 
 ### Server-to-Client Broadcast Events
 
-When actions occur via REST API or other clients, events are published to the board room topic (`board_<boardId>`):
+When actions occur via REST API or other clients, events are published to board room topics (`board_<boardId>`) or personal user topics (`user_<userId>`):
 
 | Event Type               | Payload Fields                               | Description                              |
 | :----------------------- | :------------------------------------------- | :--------------------------------------- |
@@ -347,16 +386,24 @@ When actions occur via REST API or other clients, events are published to the bo
 | `checklist:deleted`      | `{ checklistId, issueId }`                   | Checklist deleted                        |
 | `checklist_item:created` | `{ item }`                                   | Item added to checklist                  |
 | `checklist_item:updated` | `{ item }`                                   | Checklist item toggled or updated        |
+| `comment:created`        | `{ comment, issueId, boardId }`              | New comment posted on card               |
+| `comment:updated`        | `{ comment, issueId, boardId }`              | Comment edited                           |
+| `comment:deleted`        | `{ commentId, issueId, boardId }`            | Comment soft-deleted                     |
 | `list:created`           | `{ listData: Section }`                      | New column added to the board            |
 | `list:updated`           | `{ listId, title, wipLimit?, isArchived? }`  | Column renamed or updated                |
 | `list:reordered`         | `{ listId, newPosition }`                    | Column reordered                         |
 | `list:deleted`           | `{ listId }`                                 | Column deleted                           |
+| `user:notification`      | `{ notification: NotificationRecord }`       | Direct personal notification             |
+| `user:org_board_created` | `{ board: Board }`                           | Dashboard real-time board creation       |
+| `user:org_board_deleted` | `{ boardId, orgId }`                         | Dashboard real-time board deletion       |
 
 ### HTTP Endpoints on WebSocket Server
 
 - `GET /health` or `GET /api/health`: Health status and port inspection.
 - `POST /internal/broadcast`: Inter-process broadcast hook used by Express backend to dispatch real-time events to connected board subscribers. Authenticated via `x-internal-secret: <INTERNAL_BROADCAST_SECRET>` (falls back to `jwt_key`).
-- `POST /internal/evict-user`: Inter-process user socket eviction endpoint used upon member removal or privilege revocation to close active connections or unsubscribe from revoked boards. Authenticated via `x-internal-secret: <INTERNAL_BROADCAST_SECRET>` (falls back to `jwt_key`).
+- `POST /internal/evict-user`: Inter-process user socket eviction endpoint used upon member removal or privilege revocation to close active connections or unsubscribe from revoked boards. Authenticated via `x-internal-secret`.
+- `POST /internal/notify-users`: Inter-process user notification delivery endpoint used by Express backend to publish direct notification and workspace events to `user_<userId>` topics. Authenticated via `x-internal-secret`.
+- `POST /internal/update-role`: Inter-process role update endpoint used to update in-memory membership and board role caches for instantaneous permission changes. Authenticated via `x-internal-secret`.
 
 ---
 
@@ -375,18 +422,19 @@ All protected routes require a Bearer token in the `Authorization` header:
 
 ### 🏢 Organizations & Memberships
 
-| Method   | Endpoint                   | Description                                                  | Access         |
-| :------- | :------------------------- | :----------------------------------------------------------- | :------------- |
-| `GET`    | `/api/orgs`                | List all organizations for current user                      | Authenticated  |
-| `POST`   | `/api/orgs`                | Create a new organization                                    | Authenticated  |
-| `GET`    | `/api/orgs/:orgId`         | Get details of a specific organization                       | Member         |
-| `PUT`    | `/api/orgs/:orgId`         | Update organization details                                  | Org Admin      |
-| `DELETE` | `/api/orgs/:orgId`         | Delete organization                                          | Org Admin      |
-| `GET`    | `/api/orgs/:orgId/members` | List members and their roles (Member only, 200 OK)           | Member         |
-| `POST`   | `/api/orgs/:orgId/members` | Invite a user to an organization                             | Org Admin      |
-| `PUT`    | `/api/orgs/:orgId/accept`  | Accept an organization invitation                            | Invitee        |
-| `PUT`    | `/api/orgs/:orgId/members` | Update a member's role                                       | Org Admin      |
-| `DELETE` | `/api/orgs/:orgId/members` | Remove user, leave org, or cancel/revoke pending invitations | Member / Admin |
+| Method   | Endpoint                          | Description                                                                     | Access         |
+| :------- | :-------------------------------- | :------------------------------------------------------------------------------ | :------------- |
+| `GET`    | `/api/orgs`                       | List all organizations for current user                                         | Authenticated  |
+| `POST`   | `/api/orgs`                       | Create a new organization                                                       | Authenticated  |
+| `GET`    | `/api/orgs/:orgId`                | Get details of a specific organization                                          | Member         |
+| `PUT`    | `/api/orgs/:orgId`                | Update organization details                                                     | Org Admin      |
+| `DELETE` | `/api/orgs/:orgId`                | Delete organization                                                             | Org Admin      |
+| `GET`    | `/api/orgs/:orgId/members`        | List members and their roles (Member only, 200 OK)                              | Member         |
+| `POST`   | `/api/orgs/:orgId/members`        | Invite user by email with optional `role` (`admin`/`employee`/`contributor`)    | Org Admin      |
+| `PUT`    | `/api/orgs/:orgId/accept`         | Accept an organization invitation                                               | Invitee        |
+| `PUT`    | `/api/orgs/:orgId/members`        | Update a member's role                                                          | Org Admin      |
+| `DELETE` | `/api/orgs/:orgId/members`        | Remove user, leave org, or cancel/revoke pending invitations                    | Member / Admin |
+| `GET`    | `/api/orgs/:orgId/members/search` | Search accepted org members (`?q=&limit=`) for mentions and assignments        | Member         |
 
 ### 📋 Boards & Event Sync
 
@@ -441,12 +489,21 @@ All protected routes require a Bearer token in the `Authorization` header:
 
 ### 💬 Threaded Comments
 
-| Method   | Endpoint                        | Description                                   | Access         |
-| :------- | :------------------------------ | :-------------------------------------------- | :------------- |
-| `GET`    | `/api/issues/:issueId/comments` | Get nested comment tree for an issue          | Member         |
-| `POST`   | `/api/issues/:issueId/comments` | Post a comment or reply to an existing one    | Member         |
-| `PUT`    | `/api/comments/:commentId`      | Edit a comment (within 24-hour limit, 200 OK) | Author         |
-| `DELETE` | `/api/comments/:commentId`      | Delete a comment (200 OK)                     | Author / Admin |
+| Method   | Endpoint                        | Description                                                                                               | Access         |
+| :------- | :------------------------------ | :-------------------------------------------------------------------------------------------------------- | :------------- |
+| `GET`    | `/api/issues/:issueId/comments` | Get nested comment tree for an issue                                                                      | Member         |
+| `POST`   | `/api/issues/:issueId/comments` | Post comment/reply with optional `@[Display Name](user:userId)` mentions (creates & dispatches alerts)    | Member         |
+| `PUT`    | `/api/comments/:commentId`      | Edit comment (24h limit, diffs mentions, removes stale unread notifications, notifies new ones)           | Author         |
+| `DELETE` | `/api/comments/:commentId`      | Soft-delete comment (24h for author, any time for admin; reparents replies and prunes unread notifications) | Author / Admin |
+
+### 🔔 Notifications
+
+| Method  | Endpoint                                     | Description                                                               | Access        |
+| :------ | :------------------------------------------- | :------------------------------------------------------------------------ | :------------ |
+| `GET`   | `/api/notifications`                         | Fetch paginated notifications for current user (`?cursor=&limit=`)        | Authenticated |
+| `GET`   | `/api/notifications/unread-count`            | Get total count of unread notifications (`{ count }`)                     | Authenticated |
+| `PATCH` | `/api/notifications/:notificationId/read`    | Mark a single notification as read (returns `403` if not recipient)       | Recipient     |
+| `PATCH` | `/api/notifications/read-all`                | Mark all notifications as read for current user                           | Authenticated |
 
 ---
 
@@ -565,33 +622,30 @@ One caveat: user eviction also currently uses the single WebSocket HTTP target, 
 
 ## 🧪 Testing
 
-The repository features comprehensive automated testing using Bun's native test runner (`bun:test`), totaling **826 automated tests** across all monorepo packages:
+The repository features comprehensive automated testing using Bun's native test runner (`bun:test`). The fast hermetic suite executes **1,049 tests in ~2.1 seconds** across 68 files with zero external dependencies (with the full suite covering **1,288+ passing tests across 79 files**):
 
 ```bash
-# 1. Run all tests across the monorepo (826 tests)
-bun run test
+# 1. Run the fast hermetic test suite (1,049 passed, 2 skipped, 0 failed across 68 files in ~2.1s)
+bun test apps/websockets apps/frontend packages apps/backend/tests/unit
 
-# 2. Run Frontend unit, component, & adversarial tests (515 tests)
-bun test --cwd apps/frontend
+# 2. Run Frontend unit, component, optimistic rollback, & adversarial tests (617 tests across 45 files)
+bun test apps/frontend
 
-# 3. Run WebSocket unit and integration tests (131 tests)
-bun test --cwd apps/websockets
+# 3. Run WebSocket unit and protocol tests (166 tests: 164 passed, 2 skipped across 9 files)
+bun test apps/websockets
 
-# 4. Run Backend unit tests (helpers, middleware, Zod schemas, parity, & broadcast dispatches) (180 tests)
+# 4. Run Backend unit tests (helpers, middleware, mentions, notifications, IPC) (268 tests across 14 files)
 bun test apps/backend/tests/unit
 
-# 5. Run Full Backend integration tests (requires PostgreSQL test database)
-bun test --cwd apps/backend
+# 5. Type check all monorepo packages (5 packages with zero errors)
+bun x turbo run check-types --force
 
-# 6. Type check all monorepo packages (5 packages)
-bun run check-types
-
-# 7. Lint check across monorepo with zero-warning enforcement
-bun run lint
+# 6. Run Full Backend integration tests (requires running PostgreSQL test database; 507 tests across 25 files)
+RUN_DB_TESTS=1 bun test apps/backend/tests
 ```
 
 > [!NOTE]
-> Database integration tests depend on `packages/db/scripts/clearDB.ts` (configured in `turbo.json`) to automatically truncate tables before runs in the test database (`trello_test`).
+> Database integration tests depend on `packages/db/scripts/clearDB.ts` (configured in `turbo.json`) to automatically truncate all 15 public schema tables before runs in the test database (`trello_test`).
 
 ---
 
@@ -607,7 +661,11 @@ bun run lint
 - [x] Multi-user card assignments (`issue_mapping`) with email deduplication
 - [x] Card labels & checklist subtasks with position ordering
 - [x] Threaded nested comment tree with edit time limits (200 OK responses)
-- [x] Native WebSocket server with board pub/sub rooms
+- [x] Canonical `@` mentions (`@[Display Name](user:userId)`) with server validation and mention diffing
+- [x] Dedicated `notifications` table and real-time delivery over user topics (`user_<userId>`)
+- [x] Notification UI (`NotificationBell`, `NotificationDropdown`, `NotificationList`, and toast alerts)
+- [x] Native WebSocket server with multiplexed board (`board_<boardId>`) and user (`user_<userId>`) topics
+- [x] Single app-level shared WebSocket connection (`useAppSocket`, `SocketProvider`) with automatic resubscriptions
 - [x] Event sourcing with advisory locks (`pg_advisory_xact_lock`) and catch-up event sync
 - [x] Transactional outbox pattern with worker leasing (`claimedBy`, `claimExpiresAt`) and guaranteed event publishing
 - [x] Shared real-time event contract package (`packages/realtime`)
@@ -620,7 +678,7 @@ bun run lint
 - [x] React 19 frontend SPA with drag-and-drop Kanban board (`dnd-kit`), optimistic updates, and WebSocket synchronization
 - [x] Multi-criteria board search, filter bar, and timezone-safe due date urgency system
 - [x] Theme engine with dark mode, system preference detection, and FOUC prevention
-- [x] Comprehensive test suites (131 WebSocket tests + 180 Backend unit tests + 515 Frontend tests = 826 tests across the monorepo)
+- [x] Comprehensive test suites (1,049 fast hermetic tests across 68 files; 1,288+ full suite tests across 79 files)
 - [ ] GitHub webhook integration for automated card syncing
 - [ ] Card activity log and audit history
 - [ ] File attachments
