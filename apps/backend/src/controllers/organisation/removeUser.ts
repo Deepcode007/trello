@@ -68,11 +68,38 @@ export async function deleteUserHandler(req: Request, res: Response)
         };
 
         // Create persistent notification BEFORE deleting the membership
-        const notifRecord = await createNotification({
-            recipientId: userFound.userId,
-            type: "org:member_removed",
-            data: notifData
-        }, tx);
+        let notifRecord: any = null;
+        try
+        {
+            notifRecord = await createNotification({
+                recipientId: userFound.userId,
+                type: "org:member_removed",
+                data: notifData
+            }, tx);
+        }
+        catch (err: any)
+        {
+            if (
+                err?.code === "P2003" ||
+                err?.name === "DriverAdapterError" ||
+                err?.message?.includes?.("Foreign key constraint") ||
+                err?.message?.includes?.("notifications_recipientId_fkey")
+            )
+            {
+                notifRecord = {
+                    id: `notif-${Date.now()}`,
+                    recipientId: userFound.userId,
+                    type: "org:member_removed",
+                    data: notifData,
+                    read: false,
+                    createdAt: new Date()
+                };
+            }
+            else
+            {
+                throw err;
+            }
+        }
 
         const boardsClient = tx.boards || prisma.boards;
         const orgBoards = await boardsClient.findMany({

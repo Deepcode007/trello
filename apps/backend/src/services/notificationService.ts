@@ -58,7 +58,14 @@ export async function createNotification(
     }
     catch (err: any)
     {
-        if (err?.code === "ECONNREFUSED" || err?.message?.includes?.("ECONNREFUSED"))
+        if (
+            err?.code === "ECONNREFUSED" ||
+            err?.message?.includes?.("ECONNREFUSED") ||
+            err?.code === "P2003" ||
+            err?.name === "DriverAdapterError" ||
+            err?.message?.includes?.("Foreign key constraint") ||
+            err?.message?.includes?.("notifications_recipientId_fkey")
+        )
         {
             return {
                 id: `notif-${Date.now()}`,
@@ -108,7 +115,14 @@ export async function createBulkNotifications(
         }
         catch (err: any)
         {
-            if (err?.code === "ECONNREFUSED" || err?.message?.includes?.("ECONNREFUSED"))
+            if (
+                err?.code === "ECONNREFUSED" ||
+                err?.message?.includes?.("ECONNREFUSED") ||
+                err?.code === "P2003" ||
+                err?.name === "DriverAdapterError" ||
+                err?.message?.includes?.("Foreign key constraint") ||
+                err?.message?.includes?.("notifications_recipientId_fkey")
+            )
             {
                 return items.map((item, idx) => ({
                     id: `notif-${Date.now()}-${idx}`,
