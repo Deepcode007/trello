@@ -21,6 +21,7 @@ import { loginHandler } from "../controllers/loginHandler";
 import { acceptInviteHandler } from "../controllers/organisation/acceptInvite";
 import { inviteUserHandler } from "../controllers/organisation/addUser";
 import { OrgMembersHandler } from "../controllers/organisation/allMembers";
+import { searchMembersHandler } from "../controllers/organisation/searchMembers";
 import { CreateOrgHandler } from "../controllers/organisation/Create";
 import { DeleteOrgHandler } from "../controllers/organisation/deteleOrg";
 import { getCurrentOrgs } from "../controllers/organisation/getCurrent";
@@ -70,6 +71,9 @@ router.put("/api/orgs/:orgId", asyncHandler(UpdateOrgHandler));
 
 // Delete an organization.
 router.delete("/api/orgs/:orgId", asyncHandler(DeleteOrgHandler));
+
+// Search organization members for autocomplete.
+router.get("/api/orgs/:orgId/members/search", asyncHandler(searchMembersHandler));
 
 // List all users and their roles in the organization.
 router.get("/api/orgs/:orgId/members", asyncHandler(OrgMembersHandler));
