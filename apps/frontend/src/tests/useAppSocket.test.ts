@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, mock } from "bun:test";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider, type InfiniteData } from "@tanstack/react-query";
 import {
   AppSocketManager,
   getAppSocketManager,
@@ -12,7 +12,9 @@ import { useOrgStore } from "../store/useOrgStore";
 import { useAuthStore } from "../store/useAuthStore";
 import { useBoardStore } from "../store/useBoardStore";
 import type { UserOrgMembership } from "../lib/org-api";
+import type { NotificationsPageResponse } from "../lib/notification-api";
 import { api } from "../lib/api";
+import { clearToasts } from "../components/ui/toast";
 
 // Mock WebSocket class for testing
 class MockWebSocket {
@@ -309,6 +311,142 @@ describe("Phase 4: Frontend App-Level Multiplexed WebSocket Suite", () => {
       });
 
       expect(useOrgStore.getState().memberships[0]?.role).toBe("contributor");
+    });
+
+    it("updates notification list and unread count caches on user:notification event", () => {
+      queryClient.setQueryData(["notifications", "unread-count"], 0);
+      queryClient.setQueryData<InfiniteData<NotificationsPageResponse>>(["notifications"], {
+        pageParams: [undefined],
+        pages: [
+          {
+            notifications: [],
+            nextCursor: null
+          }
+        ]
+      });
+
+      const manager = new AppSocketManager();
+      manager.setQueryClient(queryClient);
+      manager.connect("test-auth-token-123");
+
+      const ws = MockWebSocket.lastInstance!;
+      ws.simulateOpen();
+
+      ws.simulateMessage({
+        type: "user:notification",
+        payload: {
+          notification: {
+            id: "notif-realtime-1",
+            type: "card:assigned",
+            data: { cardTitle: "Critical Bug", assignedByName: "Bob" },
+            createdAt: new Date().toISOString()
+          }
+        }
+      });
+
+      // Assert unread count incremented
+      expect(queryClient.getQueryData(["notifications", "unread-count"])).toBe(1);
+
+      // Assert notification prepended to list cache
+      const cached = queryClient.getQueryData<InfiniteData<NotificationsPageResponse>>([
+        "notifications"
+      ]);
+      expect(cached?.pages[0]?.notifications?.length).toBe(1);
+      expect(cached?.pages[0]?.notifications[0]?.id).toBe("notif-realtime-1");
+      expect(cached?.pages[0]?.notifications[0]?.read).toBe(false);
+    });
+
+    it("idempotently ignores duplicate user:notification events without double-counting", () => {
+      queryClient.setQueryData(["notifications", "unread-count"], 0);
+      queryClient.setQueryData<InfiniteData<NotificationsPageResponse>>(["notifications"], {
+        pageParams: [undefined],
+        pages: [
+          {
+            notifications: [],
+            nextCursor: null
+          }
+        ]
+      });
+
+      const manager = new AppSocketManager();
+      manager.setQueryClient(queryClient);
+      manager.connect("test-auth-token-123");
+
+      const ws = MockWebSocket.lastInstance!;
+      ws.simulateOpen();
+
+      const notifPayload = {
+        type: "user:notification",
+        payload: {
+          notification: {
+            id: "notif-dup-99",
+            type: "org:role_changed",
+            data: { role: "admin", orgName: "Acme" },
+            createdAt: new Date().toISOString()
+          }
+        }
+      };
+
+      // Send first time
+      ws.simulateMessage(notifPayload);
+      expect(queryClient.getQueryData(["notifications", "unread-count"])).toBe(1);
+
+      // Send duplicate
+      ws.simulateMessage(notifPayload);
+      // Unread count must still be 1 (not 2)
+      expect(queryClient.getQueryData(["notifications", "unread-count"])).toBe(1);
+
+      const cached = queryClient.getQueryData<InfiniteData<NotificationsPageResponse>>([
+        "notifications"
+      ]);
+      // Must not be duplicated in list
+      expect(cached?.pages[0]?.notifications?.length).toBe(1);
+    });
+
+    it("maintains exactly one WebSocket connection while delivering both board events and user notifications", () => {
+      MockWebSocket.reset();
+      expect(MockWebSocket.instances.length).toBe(0);
+
+      const manager = new AppSocketManager();
+      manager.setQueryClient(queryClient);
+      manager.connect("valid-token");
+
+      expect(MockWebSocket.instances.length).toBe(1);
+
+      const ws = MockWebSocket.lastInstance!;
+      ws.simulateOpen();
+
+      // Register board subscriber
+      let boardEventReceived = false;
+      const unregister = manager.registerBoardSubscriber("board-1", {
+        onEvent: event => {
+          if (event.type === "card:moved") boardEventReceived = true;
+        }
+      });
+
+      // Dispatch board event
+      ws.simulateMessage({
+        type: "card:moved",
+        payload: { cardId: "card-1", position: 100 }
+      });
+      expect(boardEventReceived).toBe(true);
+
+      // Dispatch notification event
+      ws.simulateMessage({
+        type: "user:notification",
+        payload: {
+          notification: {
+            id: "notif-one-ws",
+            type: "mention:comment",
+            data: { authorName: "Alice" },
+            createdAt: new Date().toISOString()
+          }
+        }
+      });
+
+      // Still strictly one WebSocket instance in use
+      expect(MockWebSocket.instances.length).toBe(1);
+      unregister();
     });
   });
 

@@ -703,9 +703,15 @@ describe("Empirical Challenger Verification Suite", () =>
         const origBoardUpdate = prisma.boards.update;
         const origBoardDelete = prisma.boards.delete;
         const origMembershipFindUnique = prisma.membership.findUnique;
+        const origMembershipFindMany = prisma.membership.findMany;
         const origIssueFindUnique = prisma.issues.findUnique;
         const origCommentCreate = prisma.comments.create;
         const origBroadcast = wsBroadcaster.broadcast;
+
+        beforeEach(() =>
+        {
+            prisma.membership.findMany = mock(() => Promise.resolve([{ userId: adminUserId }])) as any;
+        });
 
         afterEach(() =>
         {
@@ -713,6 +719,7 @@ describe("Empirical Challenger Verification Suite", () =>
             prisma.boards.update = origBoardUpdate;
             prisma.boards.delete = origBoardDelete;
             prisma.membership.findUnique = origMembershipFindUnique;
+            prisma.membership.findMany = origMembershipFindMany;
             prisma.issues.findUnique = origIssueFindUnique;
             prisma.comments.create = origCommentCreate;
             wsBroadcaster.broadcast = origBroadcast;

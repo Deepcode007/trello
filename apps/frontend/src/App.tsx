@@ -23,6 +23,8 @@ import { useRole } from "./hooks/useRole";
 import { Button } from "./components/ui/button";
 import { Badge } from "./components/ui/badge";
 import { OrgSwitcher } from "./components/org/OrgSwitcher";
+import { NotificationBell } from "./components/notifications/NotificationBell";
+import { ToastContainer } from "./components/ui/toast";
 import { MemberManagementModal } from "./components/org/MemberManagementModal";
 import { PendingInvitesModal } from "./components/org/PendingInvitesModal";
 import { CreateOrgModal } from "./components/org/CreateOrgModal";
@@ -108,6 +110,7 @@ function AppLayout({ children }: { children?: React.ReactNode })
     {
         logout();
         resetOrgState();
+        queryClient.removeQueries({ queryKey: ["notifications"] });
     };
 
     return (
@@ -127,6 +130,7 @@ function AppLayout({ children }: { children?: React.ReactNode })
 
                     <div className="flex items-center gap-2 sm:gap-3">
                         <ThemeToggle />
+                        {user && <NotificationBell />}
                         {user ? (
                             <>
                                 <div className="hidden md:flex items-center gap-2 sm:gap-3">
@@ -276,6 +280,7 @@ function AppLayout({ children }: { children?: React.ReactNode })
                 open={headerInvitesOpen}
                 onOpenChange={setHeaderInvitesOpen}
             />
+            <ToastContainer />
         </div>
     );
 }

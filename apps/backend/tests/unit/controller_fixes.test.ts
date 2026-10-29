@@ -78,12 +78,20 @@ describe("Controller fixes unit tests", () =>
             return { result, events: [], published: true };
         }) as any;
         wsBroadcaster.retryPendingEvents = mock(() => Promise.resolve(1)) as any;
+        if (!prisma.membership) (prisma as any).membership = {};
+        (prisma.membership as any).findMany = mock(() => Promise.resolve([{ userId }])) as any;
+        if (!prisma.sections) (prisma as any).sections = {};
+        (prisma.sections as any).count = mock(() => Promise.resolve(1)) as any;
     });
+    const originalMembershipFindMany = (prisma.membership as any)?.findMany;
+    const originalSectionsCount = (prisma.sections as any)?.count;
     afterEach(() =>
     {
         prisma.$transaction = originalTransaction;
         wsBroadcaster.executeWithOutbox = originalExecuteWithOutbox;
         wsBroadcaster.retryPendingEvents = originalRetryPendingEvents;
+        if (prisma.membership) (prisma.membership as any).findMany = originalMembershipFindMany;
+        if (prisma.sections) (prisma.sections as any).count = originalSectionsCount;
     });
 
     describe("createIssue cross-board validation and position handling", () =>

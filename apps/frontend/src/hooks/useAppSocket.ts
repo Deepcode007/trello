@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from "react";
-import { useQueryClient, type QueryClient } from "@tanstack/react-query";
+import { useQueryClient, type QueryClient, type InfiniteData } from "@tanstack/react-query";
 import { useAuthStore } from "../store/useAuthStore";
 import { useOrgStore } from "../store/useOrgStore";
 import { useBoardStore } from "../store/useBoardStore";
@@ -8,6 +8,9 @@ import type { OrgRole, UserOrgMembership } from "../lib/org-api";
 import type { BoardSummary } from "../lib/board-api";
 import type { IncomingSocketEvent } from "./useBoardSocket";
 import type { ConnectionStatus } from "../store/useBoardStore";
+import type { NotificationResponse, NotificationsPageResponse } from "../lib/notification-api";
+import { formatNotificationDetails } from "../lib/notification-format";
+import { toast } from "../components/ui/toast";
 
 export interface BoardSubscriber {
   boardId: string;
@@ -53,6 +56,7 @@ export class AppSocketManager {
   private statusListeners = new Set<(status: ConnectionStatus) => void>();
   private wsUrl: string;
   private queryClient: QueryClient | null = null;
+  private processedNotificationIds = new Set<string>();
 
   constructor(options?: { wsUrl?: string; queryClient?: QueryClient | null }) {
     this.wsUrl = options?.wsUrl || WS_BASE_URL;
@@ -61,6 +65,10 @@ export class AppSocketManager {
 
   public setQueryClient(client: QueryClient | null) {
     this.queryClient = client;
+  }
+
+  public clearProcessedNotifications() {
+    this.processedNotificationIds.clear();
   }
 
   public getSocket(): WebSocket | null {
@@ -217,6 +225,7 @@ export class AppSocketManager {
       } catch {}
       this.socket = null;
     }
+    this.processedNotificationIds.clear();
     this.setStatus("disconnected");
   }
 
@@ -411,7 +420,65 @@ export class AppSocketManager {
     };
 
     if (eventType === "user:notification") {
-      const notif = payload?.notification;
+      const notif = payload?.notification ?? payload;
+      const notifId = notif?.id || payload?.notificationId || payload?.id;
+
+      // 1. Deduplication check: prevent processing identical notification twice
+      if (notifId && this.processedNotificationIds.has(notifId)) {
+        return;
+      }
+
+      // Check if already present in TanStack Query list cache
+      const cachedList = this.queryClient?.getQueryData<InfiniteData<NotificationsPageResponse>>([
+        "notifications"
+      ]);
+      const alreadyInList = Boolean(
+        notifId && cachedList?.pages?.some(page => page.notifications.some(n => n.id === notifId))
+      );
+
+      if (alreadyInList) {
+        if (notifId) this.processedNotificationIds.add(notifId);
+        return;
+      }
+
+      if (notifId) {
+        this.processedNotificationIds.add(notifId);
+        if (this.processedNotificationIds.size > 200) {
+          const first = this.processedNotificationIds.values().next().value;
+          if (first) this.processedNotificationIds.delete(first);
+        }
+      }
+
+      // 2. Increment unread count
+      this.queryClient?.setQueryData<number>(
+        ["notifications", "unread-count"],
+        (old = 0) => old + 1
+      );
+
+      // 3. Prepend to notification list cache (if list is already cached)
+      const newNotifItem: NotificationResponse = {
+        id: notifId || `notif-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        type: notif?.type || "user:notification",
+        data: notif?.data ?? {},
+        read: false,
+        createdAt: notif?.createdAt || new Date().toISOString()
+      };
+
+      this.queryClient?.setQueryData<InfiniteData<NotificationsPageResponse>>(
+        ["notifications"],
+        old => applyNotificationReceived(old, newNotifItem)
+      );
+
+      // 4. Toast presentation for generic notification events
+      if (notif?.type) {
+        const { title, description } = formatNotificationDetails(notif);
+        toast({ title, description });
+      }
+
+      // 5. Background reconciliation
+      this.queryClient?.invalidateQueries({ queryKey: ["notifications"] });
+
+      // 6. Route org events into existing org store handlers
       if (notif?.type) {
         if (notif.type === "org:invitation_received") {
           handleOrgInvitation(notif.data ?? payload);
@@ -609,6 +676,37 @@ export function applyDashboardBoardUpdated(
       }
     };
   });
+}
+
+/**
+ * Idempotently prepends a new notification to the first page of the notifications cache.
+ * Deduplicates by notification ID.
+ */
+export function applyNotificationReceived(
+  old: InfiniteData<NotificationsPageResponse> | undefined,
+  notification: NotificationResponse
+): InfiniteData<NotificationsPageResponse> | undefined {
+  if (!old || !old.pages || old.pages.length === 0 || !old.pages[0]) return old;
+
+  const firstPage = old.pages[0];
+  const alreadyInCache = old.pages.some(page =>
+    page?.notifications?.some(n => n.id === notification.id)
+  );
+  if (alreadyInCache) return old;
+
+  const updatedFirstPage: NotificationsPageResponse = {
+    ...firstPage,
+    nextCursor: firstPage.nextCursor ?? null,
+    notifications: [notification, ...(firstPage.notifications || [])]
+  };
+
+  return {
+    ...old,
+    pages: [
+      updatedFirstPage,
+      ...old.pages.slice(1)
+    ]
+  };
 }
 
 // Global default instance for the application
