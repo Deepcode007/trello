@@ -4,17 +4,33 @@
     "tasks": {
         "build": {
             "dependsOn": [
-                "^build"
+                "^build",
+                "db#generate",
+                "check-types"
             ],
             "inputs": [
                 "$TURBO_DEFAULT$",
-                ".env*"
+                ".env*",
+                {
+                    "mode": "dependencyOutputs",
+                    "from": [
+                        "db#generate"
+                    ],
+                    "globs": [
+                        "generated/prisma/**"
+                    ]
+                }
             ],
             "outputs": [
                 "dist/**",
                 ".next/**",
                 "!.next/cache/**",
                 "!.next/dev/**"
+            ]
+        },
+        "db#generate": {
+            "outputs": [
+                "generated/prisma/**"
             ]
         },
         "start": {
@@ -31,7 +47,8 @@
         },
         "check-types": {
             "dependsOn": [
-                "^check-types"
+                "^check-types",
+                "db#generate"
             ]
         },
         "dev": {

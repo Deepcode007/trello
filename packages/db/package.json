@@ -7,7 +7,9 @@
     "./Priority": "./generated/prisma/enums.ts"
   },
   "scripts": {
-    "test:setup": "bun run scripts/clearDB.ts"
+    "test:setup": "bun run scripts/clearDB.ts",
+    "generate": "bunx prisma generate",
+    "check-types": "tsc --noEmit"
   },
   "type": "module",
   "private": true,
